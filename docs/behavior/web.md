@@ -19,6 +19,7 @@ refuse to load modules from `file://`).
 | Send To | PDF written to Desktop, Documents or a mail folder | PDF downloaded |
 | Edit Bitmap (external editor) | system image editor | not available (a browser cannot hand files to programs) |
 | Settings | `settings.json` in the configuration folder, saved as they change | browser local storage (key `tracedraw.settings`), saved as they change: they stay in that browser on that computer, until its site data is cleared |
+| Auto-backup and session recovery | backups and session markers in the auto-backup folder (`recovery.md`) | backups in the page's IndexedDB database and markers in its local storage; leaving the page with unsaved drawings asks first (`recovery.md`, "In the browser") |
 | Recent documents | listed on the Welcome screen | not recorded (uploads have no path to reopen) |
 | Fonts | installed system fonts | bundled at build time: Liberation Sans, Serif and Mono, DejaVu Sans, Noto Sans Devanagari and Bengali; the published page's font folder adds about a hundred free families (stand-ins of the same widths for common office faces, popular families, Chinese, Japanese, Korean, Arabic, Hebrew and Thai) and its font catalog every other family of the google/fonts collection (about 2,000), each fetched the first time a drawing's text needs it or a font list's pointer rests on it (see `web/FONTS.md`); Chinese and Japanese UI text needs a font the build machine had |
 | System clipboard | text, images and copied files (arboard) | text through the browser; pasting images or files from other programs is not available |
@@ -168,6 +169,18 @@ page: use the browser's reload button
 (`web_page::tests::the_browser_keeps_only_the_clipboard_and_developer_keys`).
 Ctrl+N, Ctrl+T and Ctrl+W stay with the browser because no page can take
 them; use the File menu for New and Close.
+
+AltGr types its characters (`€ @ [ ] { } \`, the Polish, Czech and
+other letters of many keyboard layouts) in text and in every field.
+Browsers on Windows report AltGr as Ctrl and Alt held together, with the
+`AltGraph` modifier state set: such a key is not kept from the browser,
+so its character reaches the text, and the editor sees neither Ctrl nor
+Alt held for it, so it is no Ctrl shortcut (AltGr+A does not select all,
+AltGr+E does not export), as in the desktop app, where the windowing
+layer does the same (#1408;
+`web_page::tests::characters_typed_with_altgr_are_left_to_the_browser`).
+On Linux and macOS AltGr (Option) never sets Ctrl, and Android keyboards
+report it as the right Alt.
 
 ## Building
 

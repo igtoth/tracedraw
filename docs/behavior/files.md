@@ -180,11 +180,22 @@ objects open as drawn.
   and 23 (`mcp::tests::export_and_save_write_files`).
 - Every version from 7 to 22 reads back with its pages, layers, objects,
   text runs and alignment (`write::tests` in `crates/cdr`).
-- A line of three colours saved as `.cdr` 16 to 27 marks its three runs
-  as having styles of their own (0x3fff, 0x14), and a text of one run
-  keeps the plain marks (0, 0x04), so the program that reads `.cdr`
-  files keeps the colours (#1297;
-  `write::tests::runs_of_their_own_style_are_marked_as_applying`).
+- A line of several colours saved as `.cdr` 16 to 27 holds a table of
+  its looks: the plain record (0, 0x04, `{"character":{}}`) for the
+  letters in the line's own look and its end, then one record per other
+  colour, complete (fill, angle, outline, the three fonts, shifts) and
+  marked as applying (0x3fff, 0x14); a colour met twice has one record,
+  and a text of one look keeps the plain record alone, so the program
+  that reads `.cdr` files keeps the colours (#1297, #1379;
+  `write::tests::runs_of_their_own_colour_are_a_table_of_looks_marked_as_applying`).
+  With Embed fonts on, the run styles name the embedded face exactly as
+  the paragraph's style does and the font table is the one a text of one
+  colour gets (`two_colours_name_the_embedded_font_as_one_colour_does`).
+  `tracedraw-cli check` reports a run style marked as applying no member.
+- A line of more than 128 colours saved as `.cdr` in any version keeps
+  the colours of its first 128 and gives the letters of the others the
+  line's first colour: a letter names its record in 7 bits
+  (`a_line_of_more_looks_than_records_stays_readable`).
 - A picture saved as `.cdr` has its outline nodes marked as a curve's
   (0x0c, 0x44, 0x44, 0x44, 0x48), as the files of the program that reads
   `.cdr` files have them; unmarked, a click on the picture closed that

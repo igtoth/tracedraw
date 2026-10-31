@@ -674,6 +674,14 @@ impl FontLoad {
         self.handle.as_ref().is_none_or(|h| h.is_finished())
     }
 
+    /// A load of a thread of the test's own.
+    #[cfg(test)]
+    pub fn from_thread(handle: std::thread::JoinHandle<egui::FontDefinitions>) -> Self {
+        FontLoad {
+            handle: Some(handle),
+        }
+    }
+
     /// Whether a load is still under way.
     #[cfg(test)]
     pub fn pending(&self) -> bool {

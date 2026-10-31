@@ -4606,15 +4606,17 @@ fn runs_of_their_own_colour_name_their_font_as_the_paragraph_does() {
             r#"{{"overline":"0","effect":"0","version":"","italic":"0","weight":"64","underline":"0","charset":"{charset}","technology":"4","size":"84667","font":"Selawik","script":"0","strikeout":"0"}}"#
         )
     };
+    // The red run has the paragraph's look (its record is the plain
+    // one); the blue one a record of its own.
     let run = |colour: &str| {
         format!(
-            r#"{{"character":{{"fill":{{"type":"1","overprint":"0","secondaryColor":"CMYK,USER,0,0,0,0,100,00000000-0000-0000-0000-000000000000","primaryColor":"{colour}","screenSpec":"0,0,45000000,60,0"}},"latin":{},"RTL":{},"farEast":{}}}}}"#,
-            font(0),
+            r#"{{"character":{{"fill":{{"type":"1","overprint":"0","secondaryColor":"CMYK,USER,0,0,0,0,100,00000000-0000-0000-0000-000000000000","primaryColor":"{colour}","screenSpec":"0,0,45000000,60,0"}},"angle":"0","outline":{},"RTL":{},"latin":{},"h_shift":"0","v_shift":"0","farEast":{}}}}}"#,
+            character_outline_json(),
             font(178),
+            font(0),
             font(128)
         )
     };
-    let red_spec = colour_spec(Color::rgb8(255, 0, 0));
     let blue_spec = colour_spec(Color::rgb8(0, 0, 255));
     for v in 16..=NEWEST_VERSION {
         let bytes = document_to_cdr_version_with(&doc, v, &previews);
@@ -4630,9 +4632,8 @@ fn runs_of_their_own_colour_name_their_font_as_the_paragraph_does() {
         // without the zero bytes both read as the ASCII they hold.
         let ascii: Vec<u8> = recs[0].iter().copied().filter(|b| *b != 0).collect();
         let text = String::from_utf8_lossy(&ascii);
-        for want in [run(&red_spec), run(&blue_spec)] {
-            assert!(text.contains(&want), "{v}: no run style {want}\n{text}");
-        }
+        let want = run(&blue_spec);
+        assert!(text.contains(&want), "{v}: no run style {want}\n{text}");
         // Not the short form of before.
         assert!(!text.contains(r#""latin":{"font":"#), "{v}");
         let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
@@ -4648,77 +4649,502 @@ fn runs_of_their_own_colour_name_their_font_as_the_paragraph_does() {
     }
 }
 
-/// The run records of a text of several colours in one line mark their
-/// styles as applying (members 0x3fff, flags 0x14: a locale and a style),
-/// as the files of the program that reads them hold such runs; written
-/// with 0 and 0x04, the marks of a run with its paragraph's style, the
-/// style was ignored there and the whole line took one colour (#1297,
-/// #1347). A text of one run keeps the plain marks.
+/// One run record of a version 16+ paragraph: its letter count, the
+/// members of its style that apply, its flags and its style string.
+#[derive(Debug, Clone, PartialEq)]
+struct RunRecord {
+    letters: u16,
+    members: u16,
+    flags: u16,
+    style: String,
+}
+
+/// A version 16+ paragraph as the writer lays it out: its default style
+/// string, its run records and the record each letter names.
+#[derive(Debug)]
+struct WrittenParagraph {
+    default: String,
+    records: Vec<RunRecord>,
+    letters: Vec<u8>,
+}
+
+/// The paragraphs of a `txsm` record the writer produced for version
+/// `v` (16 on): frame flag set, one frame not on a path.
+fn written_paragraphs(d: &[u8], v: u16) -> Vec<WrittenParagraph> {
+    let mut p = 0usize;
+    let u8_at = |p: &mut usize| {
+        let x = d[*p];
+        *p += 1;
+        x
+    };
+    let u16_at = |p: &mut usize| {
+        let x = u16::from_le_bytes([d[*p], d[*p + 1]]);
+        *p += 2;
+        x
+    };
+    let u32_at = |p: &mut usize| {
+        let x = u32::from_le_bytes([d[*p], d[*p + 1], d[*p + 2], d[*p + 3]]);
+        *p += 4;
+        x as usize
+    };
+    let string = |p: &mut usize| {
+        let n = u32_at(p);
+        if v < 17 {
+            let units: Vec<u16> = d[*p..*p + 2 * n]
+                .chunks(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
+            *p += 2 * n;
+            String::from_utf16_lossy(&units)
+        } else {
+            let s = String::from_utf8_lossy(&d[*p..*p + n]).into_owned();
+            *p += n;
+            s
+        }
+    };
+    assert_ne!(u32_at(&mut p), 0, "frame flag");
+    p += 32;
+    assert_eq!(u16_at(&mut p), 1700);
+    p += 3;
+    let frames = u32_at(&mut p);
+    for _ in 0..frames {
+        p += 4 + 48;
+        assert_eq!(u32_at(&mut p), 0, "not on a path");
+        p += 8;
+    }
+    let mut out = Vec::new();
+    for _ in 0..u32_at(&mut p) {
+        p += 4 + 1;
+        assert_eq!(u8_at(&mut p), 0);
+        let default = string(&mut p);
+        let mut records = Vec::new();
+        for _ in 0..u32_at(&mut p) {
+            let letters = u16_at(&mut p);
+            let members = u16_at(&mut p);
+            let flags = u16_at(&mut p);
+            assert_ne!(flags & 0x04, 0, "a locale");
+            let locale = u32_at(&mut p);
+            p += 2 * locale;
+            records.push(RunRecord {
+                letters,
+                members,
+                flags,
+                style: string(&mut p),
+            });
+        }
+        let n = u32_at(&mut p);
+        let letters = (0..n).map(|k| d[p + 8 * k + 2] >> 1).collect();
+        p += 8 * n;
+        p += u32_at(&mut p);
+        assert_eq!(u8_at(&mut p), 0, "no letter paths");
+        out.push(WrittenParagraph {
+            default,
+            records,
+            letters,
+        });
+    }
+    assert_eq!(p, d.len(), "the whole record read");
+    out
+}
+
+/// The `txsm` records of a written file.
+fn txsm_records(bytes: &[u8]) -> Vec<Vec<u8>> {
+    let (_, tree, riff) = chunk_ids(bytes);
+    let mut recs = Vec::new();
+    tree.root.walk(&mut |c, _| {
+        if c.is(b"txsm") {
+            recs.push(tree.data(&riff, c).to_vec());
+        }
+    });
+    recs
+}
+
+/// The member `key` of a style string (`"key":{...}` or `"key":"..."`),
+/// as written: the writer's strings hold no braces inside values.
+fn style_member<'s>(style: &'s str, key: &str) -> Option<&'s str> {
+    let at = style.find(&format!(r#""{key}":"#))? + key.len() + 3;
+    let rest = &style[at..];
+    if rest.starts_with('{') {
+        let mut depth = 0;
+        for (i, c) in rest.char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(&rest[..=i]);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    } else {
+        let end = rest[1..].find('"')? + 2;
+        Some(&rest[..end])
+    }
+}
+
+/// A text of one line in several colours is written as the files of the
+/// program that reads them hold such a line: its run records are a table
+/// of the line's looks, the plain record first (no members, flags 0x04,
+/// style `{"character":{}}`) counting the letters in the paragraph's look
+/// and the paragraph's end, then a record per other colour marked as
+/// applying (members 0x3fff, flags 0x14: a locale and a style) with its
+/// complete style and the count of its letters; each letter names its
+/// record, and a colour met twice has one record. Written with 0 and 0x04
+/// on every record, the styles were ignored there and the line came out
+/// in one colour (#1297, #1347, #1361, #1379). Checked in every version
+/// from 16; the colours read back in every version from 7.
 #[test]
-fn runs_of_their_own_style_are_marked_as_applying() {
+fn runs_of_their_own_colour_are_a_table_of_looks_marked_as_applying() {
+    let red = Color::rgb8(255, 0, 0);
+    let green = Color::rgb8(0, 160, 0);
+    let blue = Color::rgb8(0, 0, 255);
     let mut doc = doc_with(Vec::new());
     let mut ids = doc.ids().clone();
     let mut spans = Vec::new();
-    for (text, c) in [("R", (255, 0, 0)), ("G", (0, 160, 0)), ("B", (0, 0, 255))] {
+    for (text, c) in [("My ", red), ("Na", green), ("me", blue), ("is", red)] {
         let mut sp = TextSpan::new(text, "Arial", 24.0);
-        sp.fill = Some(Fill::Solid(Color::rgb8(c.0, c.1, c.2)));
+        sp.fill = Some(Fill::Solid(c));
         spans.push(sp);
     }
-    let one = TextSpan::new("One", "Arial", 24.0);
     doc.pages[0].layers[0].shapes = vec![
         text_shape(&mut ids, spans, TextAlign::Left),
-        text_shape(&mut ids, vec![one], TextAlign::Left),
+        text_shape(
+            &mut ids,
+            vec![TextSpan::new("One", "Arial", 24.0)],
+            TextAlign::Left,
+        ),
     ];
     doc.set_ids(ids);
-    // The two fields, then the locale "ENU" (count 3, UTF-16).
-    let marked = |members: u16, flags: u16| {
-        let mut m = Vec::new();
-        m.extend_from_slice(&members.to_le_bytes());
-        m.extend_from_slice(&flags.to_le_bytes());
-        m.extend_from_slice(&[3, 0, 0, 0, b'E', 0, b'N', 0, b'U', 0]);
-        m
-    };
-    let count =
-        |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).filter(|w| *w == needle).count();
-    for v in 16..=NEWEST_VERSION {
+    for v in OLDEST_VERSION..=NEWEST_VERSION {
         let bytes = document_to_cdr_version(&doc, v);
-        let (_, tree, riff) = chunk_ids(&bytes);
-        let mut recs = Vec::new();
-        tree.root.walk(&mut |c, _| {
-            if c.is(b"txsm") {
-                recs.push(tree.data(&riff, c).to_vec());
-            }
-        });
-        assert_eq!(recs.len(), 2, "{v}");
-        let (several, single) = if count(&recs[0], &marked(0x3fff, 0x14)) > 0 {
-            (&recs[0], &recs[1])
-        } else {
-            (&recs[1], &recs[0])
-        };
-        assert_eq!(count(several, &marked(0x3fff, 0x14)), 3, "{v}");
-        assert_eq!(count(several, &marked(0, 4)), 0, "{v}");
-        assert_eq!(count(single, &marked(0, 4)), 1, "{v}");
-        assert_eq!(count(single, &marked(0x3fff, 0x14)), 0, "{v}");
         crate::check::assert_clean(&bytes, v);
         let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
-        let texts: Vec<Vec<Option<Fill>>> = back.pages[0].layers[0]
+        let colours: Vec<Vec<(String, Option<Fill>)>> = back.pages[0].layers[0]
             .shapes
             .iter()
             .filter_map(|s| match &s.kind {
-                ShapeKind::Text { spans, .. } => {
-                    Some(spans.iter().map(|sp| sp.fill.clone()).collect())
-                }
+                ShapeKind::Text { spans, .. } => Some(
+                    spans
+                        .iter()
+                        .map(|sp| (sp.text.clone(), sp.fill.clone()))
+                        .collect(),
+                ),
                 _ => None,
             })
             .collect();
-        assert!(
-            texts
+        let want: Vec<(String, Option<Fill>)> =
+            [("My ", red), ("Na", green), ("me", blue), ("is", red)]
                 .iter()
-                .any(|f| f.len() == 3 && f.iter().all(Option::is_some)),
-            "{v}: {texts:?} {:?}",
+                .map(|(t, c)| (t.to_string(), Some(Fill::Solid(*c))))
+                .collect();
+        assert!(
+            colours.contains(&want),
+            "{v}: {colours:?} {:?}",
+            rep.warnings
+        );
+        if v < 16 {
+            continue;
+        }
+        let recs = txsm_records(&bytes);
+        assert_eq!(recs.len(), 2, "{v}");
+        let mut paras: Vec<WrittenParagraph> =
+            recs.iter().flat_map(|r| written_paragraphs(r, v)).collect();
+        paras.sort_by_key(|p| p.letters.len());
+        let (one, line) = (&paras[0], &paras[1]);
+        // One look: the plain record alone.
+        assert_eq!(
+            one.records,
+            vec![RunRecord {
+                letters: 4,
+                members: 0,
+                flags: 0x04,
+                style: r#"{"character":{}}"#.into(),
+            }],
+            "{v}"
+        );
+        assert_eq!(one.letters, vec![0; 3], "{v}");
+        // Red (5 letters and the end), green, blue.
+        let marks: Vec<(u16, u16, u16)> = line
+            .records
+            .iter()
+            .map(|r| (r.letters, r.members, r.flags))
+            .collect();
+        assert_eq!(
+            marks,
+            vec![(6, 0, 0x04), (2, 0x3fff, 0x14), (2, 0x3fff, 0x14)],
+            "{v}"
+        );
+        assert_eq!(line.records[0].style, r#"{"character":{}}"#, "{v}");
+        assert_eq!(line.letters, vec![0, 0, 0, 1, 1, 2, 2, 0, 0], "{v}");
+        for (r, c) in line.records[1..].iter().zip([green, blue]) {
+            let fill = style_member(&r.style, "fill").expect("fill");
+            assert!(fill.contains(&colour_spec(c)), "{v}: {fill}");
+            // Every member a run of that program's files holds, the
+            // fonts and the outline as the paragraph's default has them.
+            for key in [
+                "angle", "outline", "RTL", "latin", "farEast", "h_shift", "v_shift",
+            ] {
+                assert_eq!(
+                    style_member(&r.style, key),
+                    style_member(&line.default, key),
+                    "{v}: {key} of {}",
+                    r.style
+                );
+            }
+        }
+    }
+}
+
+/// With Embed fonts on, a text of two colours names its embedded face
+/// in every run style exactly as the paragraph's default style and a
+/// text of one colour do, and the font table and the embedded font are
+/// the same for both: in the program that reads the files, a one-colour
+/// text found its embedded font while a two-colour one asked for it
+/// (#1297, #1009, #1055).
+#[test]
+fn two_colours_name_the_embedded_font_as_one_colour_does() {
+    const REGULAR: &[u8] =
+        include_bytes!("../../../../apps/tracedraw/assets/fonts/Selawik-Regular.ttf");
+    let previews = Previews {
+        fonts: vec![FontFace {
+            family: "Selawik".into(),
+            bold: false,
+            italic: false,
+            data: Some(std::sync::Arc::new(REGULAR.to_vec())),
+        }],
+        embed_fonts: true,
+        ..Default::default()
+    };
+    let text = |colours: &[Color]| {
+        let mut doc = doc_with(Vec::new());
+        let mut ids = doc.ids().clone();
+        let spans = colours
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                let mut sp = TextSpan::new(["ab", "cd"][i % 2], "Selawik", 30.0);
+                sp.fill = Some(Fill::Solid(*c));
+                sp
+            })
+            .collect();
+        doc.pages[0].layers[0].shapes = vec![text_shape(&mut ids, spans, TextAlign::Left)];
+        doc.set_ids(ids);
+        doc
+    };
+    let black = Color::BLACK;
+    let red = Color::rgb8(255, 0, 0);
+    let one = text(&[black, black]);
+    let two = text(&[black, red]);
+    let fonts = |bytes: &[u8]| {
+        let (_, tree, riff) = chunk_ids(bytes);
+        let mut f = Vec::new();
+        tree.root.walk(&mut |c, _| {
+            if c.is(b"font") {
+                f.push(tree.data(&riff, c).to_vec());
+            }
+        });
+        f
+    };
+    for v in 16..=NEWEST_VERSION {
+        let a = document_to_cdr_version_with(&one, v, &previews);
+        let b = document_to_cdr_version_with(&two, v, &previews);
+        crate::check::assert_clean(&b, v);
+        assert_eq!(fonts(&a), fonts(&b), "{v}: the font table");
+        let pa = written_paragraphs(&txsm_records(&a)[0], v);
+        let pb = written_paragraphs(&txsm_records(&b)[0], v);
+        assert_eq!(pa[0].default, pb[0].default, "{v}: the default style");
+        assert_eq!(pb[0].records.len(), 2, "{v}");
+        let styled = &pb[0].records[1];
+        assert_eq!((styled.members, styled.flags), (0x3fff, 0x14), "{v}");
+        for key in ["RTL", "latin", "farEast"] {
+            let f = style_member(&styled.style, key).expect("font");
+            assert!(f.contains(r#""font":"Selawik""#), "{v}: {f}");
+            assert_eq!(Some(f), style_member(&pb[0].default, key), "{v}: {key}");
+        }
+        let (back, rep) = crate::open_bytes(&b, "back").expect("reads back");
+        assert_eq!(back.fonts.len(), 1, "{v}: the font is embedded");
+        let ShapeKind::Text { spans, .. } = &back.pages[0].layers[0].shapes[0].kind else {
+            panic!("{v}");
+        };
+        // The black letters may read as the object's own fill (black).
+        let object = back.pages[0].layers[0].shapes[0].fill.clone();
+        let fills: Vec<Fill> = spans
+            .iter()
+            .map(|sp| sp.fill.clone().unwrap_or_else(|| object.clone()))
+            .collect();
+        assert_eq!(
+            fills,
+            vec![Fill::Solid(black), Fill::Solid(red)],
+            "{v}: {:?}",
             rep.warnings
         );
     }
+}
+
+/// A line with more looks than a letter can name (127 besides the
+/// paragraph's) keeps the first 127 and gives the letters of the others
+/// the paragraph's look: no letter names a record that is not there and
+/// no record is empty, which made the program that reads them hang.
+#[test]
+fn a_line_of_more_looks_than_records_stays_readable() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let spans: Vec<TextSpan> = (0..200u32)
+        .map(|i| {
+            let mut sp = TextSpan::new("x", "Arial", 12.0);
+            sp.fill = Some(Fill::Solid(Color::rgb8(i as u8, 0, 255 - i as u8)));
+            sp
+        })
+        .collect();
+    doc.pages[0].layers[0].shapes = vec![text_shape(&mut ids, spans, TextAlign::Left)];
+    doc.set_ids(ids);
+    for v in [16, 21, 27] {
+        let bytes = document_to_cdr_version(&doc, v);
+        crate::check::assert_clean(&bytes, v);
+        let p = &written_paragraphs(&txsm_records(&bytes)[0], v)[0];
+        assert_eq!(p.records.len(), 128, "{v}");
+        assert!(p.records.iter().all(|r| r.letters > 0), "{v}");
+        assert_eq!(p.records[0].letters, 200 - 127 + 1, "{v}");
+        assert!(p.letters.iter().all(|k| usize::from(*k) < 128), "{v}");
+        assert_eq!(p.letters[127], 127, "{v}");
+        assert_eq!(p.letters[128], 0, "{v}");
+    }
+    // In every version the first 128 letters keep their colours and the
+    // others read back in the first letter's (versions 7 to 15 wrote a
+    // record per look or per run past the 128th, whose letters named the
+    // 128th record and took its colour).
+    let colour = |i: usize| Fill::Solid(Color::rgb8(i as u8, 0, 255 - i as u8));
+    for v in OLDEST_VERSION..=NEWEST_VERSION {
+        let bytes = document_to_cdr_version(&doc, v);
+        crate::check::assert_clean(&bytes, v);
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let shape = &back.pages[0].layers[0].shapes[0];
+        let ShapeKind::Text { spans, .. } = &shape.kind else {
+            panic!("{v}");
+        };
+        let letters: Vec<Fill> = spans
+            .iter()
+            .flat_map(|sp| {
+                let f = sp.fill.clone().unwrap_or_else(|| shape.fill.clone());
+                std::iter::repeat_n(f, sp.text.chars().count())
+            })
+            .collect();
+        let want: Vec<Fill> = (0..200)
+            .map(|i| colour(if i < 128 { i } else { 0 }))
+            .collect();
+        assert_eq!(letters, want, "{v}: {:?}", rep.warnings);
+    }
+}
+
+/// A version 16+ package with the first `from` in its members replaced
+/// by `to`, every member stored.
+fn repack(bytes: &[u8], from: &[u8], to: &[u8]) -> Vec<u8> {
+    use std::io::{Read, Write};
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("a package");
+    let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let stored =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let mut done = false;
+    for i in 0..archive.len() {
+        let mut m = archive.by_index(i).expect("a member");
+        let name = m.name().to_string();
+        let mut data = Vec::new();
+        m.read_to_end(&mut data).expect("reads");
+        if !done {
+            if let Some(at) = data.windows(from.len()).position(|w| w == from) {
+                data.splice(at..at + from.len(), to.iter().copied());
+                done = true;
+            }
+        }
+        out.start_file(name, stored).expect("member");
+        out.write_all(&data).expect("writes");
+    }
+    assert!(done, "the bytes to replace");
+    out.finish().expect("package").into_inner()
+}
+
+/// `check` reports a version 16+ run record whose style is marked as
+/// applying no member (the program that reads the files ignores it), as
+/// TraceDraw wrote the runs of a text of several colours until 0.28.
+#[test]
+fn check_reports_run_styles_marked_as_not_applying() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let mut a = TextSpan::new("ab", "Arial", 24.0);
+    a.fill = Some(Fill::Solid(Color::rgb8(255, 0, 0)));
+    let mut b = TextSpan::new("cd", "Arial", 24.0);
+    b.fill = Some(Fill::Solid(Color::rgb8(0, 0, 255)));
+    doc.pages[0].layers[0].shapes = vec![text_shape(&mut ids, vec![a, b], TextAlign::Left)];
+    doc.set_ids(ids);
+    let bytes = document_to_cdr_version(&doc, 21);
+    assert!(crate::check::check_bytes(&bytes)
+        .expect("checks")
+        .is_empty());
+    // The styled record's marks, (0x3fff, 0x14), as (0, 0x04).
+    let mut mark = Vec::new();
+    mark.extend_from_slice(&0x3fffu16.to_le_bytes());
+    mark.extend_from_slice(&0x14u16.to_le_bytes());
+    mark.extend_from_slice(&[3, 0, 0, 0, b'E', 0]);
+    let mut unmarked = mark.clone();
+    unmarked[..4].copy_from_slice(&[0, 0, 4, 0]);
+    let old = repack(&bytes, &mark, &unmarked);
+    let findings = crate::check::check_bytes(&old).expect("checks");
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.to_string().contains("marked as applying no member")),
+        "{findings:?}"
+    );
+}
+
+/// A run record marked with neither members nor a locale (0, 0) still
+/// ends with a style string: the files of the program that wrote the
+/// samples hold `{"character":{}}` there (versions 16 to 27, #1139,
+/// #1297), and reading on as if it had none lost the text.
+#[test]
+fn a_run_record_of_no_marks_is_read_with_its_style_string() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    doc.pages[0].layers[0].shapes = vec![text_shape(
+        &mut ids,
+        vec![TextSpan::new("dkd", "Arial", 24.0)],
+        TextAlign::Left,
+    )];
+    doc.set_ids(ids);
+    let bytes = document_to_cdr_version(&doc, 21);
+    let rec = txsm_records(&bytes).remove(0);
+    let p = &written_paragraphs(&rec, 21)[0];
+    assert_eq!(p.records.len(), 1);
+    // Rebuild the record as (4, 0, 0), no locale, `{"character":{}}`.
+    let style = br#"{"character":{}}"#;
+    let mut plain = Vec::new();
+    plain.extend_from_slice(&4u16.to_le_bytes());
+    plain.extend_from_slice(&[0, 0, 4, 0, 3, 0, 0, 0, b'E', 0, b'N', 0, b'U', 0]);
+    plain.extend_from_slice(&(style.len() as u32).to_le_bytes());
+    plain.extend_from_slice(style);
+    let at = rec
+        .windows(plain.len())
+        .position(|w| w == plain)
+        .expect("the plain record");
+    let mut bare = rec[..at].to_vec();
+    bare.extend_from_slice(&4u16.to_le_bytes());
+    bare.extend_from_slice(&[0, 0, 0, 0]);
+    bare.extend_from_slice(&(style.len() as u32).to_le_bytes());
+    bare.extend_from_slice(style);
+    bare.extend_from_slice(&rec[at + plain.len()..]);
+    let mut warnings = Vec::new();
+    let read = crate::text::read_txsm(&bare, 21, 0, &mut |w| warnings.push(w)).expect("reads");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let text: String = read.paragraphs[0]
+        .runs
+        .iter()
+        .map(|r| r.text.as_str())
+        .collect();
+    assert_eq!(text, "dkd");
+    assert_eq!(read.inert_styles, 0);
 }
 
 /// `font` with its name table replaced by one of `names` (name ID and

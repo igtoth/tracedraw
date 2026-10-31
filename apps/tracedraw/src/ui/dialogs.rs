@@ -1928,7 +1928,9 @@ pub fn show(app: &mut App, ctx: &Context) {
                     close = true;
                 }
                 Some(_) => {
-                    crate::recovery::dismiss(found, false);
+                    // A browser's backups cannot be reached outside the
+                    // page: they go with the marker.
+                    crate::recovery::dismiss(found, crate::files::WEB);
                     close = true;
                 }
                 None => {}

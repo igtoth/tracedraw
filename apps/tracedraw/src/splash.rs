@@ -6,9 +6,15 @@
 //! built (opening the file named on the command line), and the window
 //! becomes the main window, maximized or at the size it was left. The
 //! system fonts are read on a worker thread meanwhile (since the start of
-//! the program, see `main.rs`); the splash waits for them only when the
-//! interface language needs one, the editor takes them in when they arrive
-//! otherwise. Options > General turns the splash off; `--no-splash` or
+//! the program, see `lib.rs`). The editor cannot be built without the list
+//! of system fonts, so the splash stays up, drawn and answering, until the
+//! list is in: reading it can take minutes on a computer with thousands of
+//! fonts or a slow disk, and the editor used to wait for it on the
+//! window's thread, which left the window blank (#1388). The interface
+//! fonts themselves (copies of the fonts for Chinese, Japanese, Arabic,
+//! Hindi and Bengali) are waited for only when the interface language
+//! needs one; the editor takes them in when they arrive otherwise.
+//! Options > General turns the splash off; `--no-splash` or
 //! `TRACEDRAW_NO_SPLASH=1` skip it for one run.
 
 use crate::i18n::{tr, trf};
@@ -31,6 +37,11 @@ pub const MIN_SIZE: Vec2 = Vec2::new(800.0, 500.0);
 const EASE_TIME: Duration = Duration::from_millis(1600);
 /// How far the bar goes while the splash waits for something.
 const WAITING_FILL: f32 = 0.8;
+/// After [`EASE_TIME`] a long wait (thousands of fonts, a slow disk)
+/// creeps on towards [`CREEP_FILL`], two thirds of the way in this time,
+/// so that the bar never stands still while TraceDraw is working (#1388).
+const CREEP_TIME: Duration = Duration::from_secs(30);
+const CREEP_FILL: f32 = 0.97;
 
 /// What the shell does after a splash frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +60,10 @@ pub struct Splash {
     /// The interface language needs a system font: its texts wait for the
     /// fonts, and so does the start of the editor.
     wait_for_fonts: bool,
+    /// Whether the list of system fonts is in (`tracedraw_text::fonts_loaded`,
+    /// a stand-in in tests): the editor is built only then, so that the
+    /// window's thread never waits for the font scan (#1388).
+    font_list_ready: fn() -> bool,
     /// Frames drawn since the full fonts were installed (they apply from
     /// the next frame on).
     frames_with_fonts: Option<u32>,
@@ -68,10 +83,19 @@ impl Splash {
     pub fn start(ctx: &egui::Context, file: Option<&Path>) -> Self {
         ctx.set_fonts(crate::theme::bundled_font_definitions());
         ctx.set_visuals(crate::theme::visuals());
+        // The scan the program started (a thread of its own when that one
+        // could not be made); with no thread at all the editor reads the
+        // fonts itself, as before.
+        let scanning = tracedraw_text::load_in_background();
         Splash {
             started: Instant::now(),
             fonts: FontLoad::start(),
             wait_for_fonts: crate::theme::needs_system_font(&crate::i18n::language()),
+            font_list_ready: if scanning {
+                tracedraw_text::fonts_loaded
+            } else {
+                || true
+            },
             frames_with_fonts: None,
             file_name: file
                 .and_then(|p| p.file_name())
@@ -96,9 +120,11 @@ impl Splash {
             *n = n.saturating_add(1);
         }
         let elapsed = self.started.elapsed();
-        // The editor starts without the system fonts unless its texts
-        // need one; they are installed when they arrive.
-        let fonts_ready = self.frames_with_fonts.is_some() || !self.wait_for_fonts;
+        // The editor waits for the list of system fonts, here, with the
+        // splash drawn; it starts without the interface fonts unless its
+        // texts need one, and installs them when they arrive.
+        let fonts_ready =
+            (self.font_list_ready)() && (self.frames_with_fonts.is_some() || !self.wait_for_fonts);
         let texts = !self.wait_for_fonts || self.frames_with_fonts.is_some_and(|n| n >= 1);
         let status = status_text(fonts_ready, self.file_name.as_deref());
         paint(
@@ -136,15 +162,17 @@ pub fn status_text(fonts_ready: bool, file: Option<&str>) -> String {
 }
 
 /// The progress bar's fill, 0 to 1: it eases towards 80 % over
-/// [`EASE_TIME`] while the fonts load and is full once they are in (the
-/// editor is built right after).
+/// [`EASE_TIME`] while the fonts load, then creeps on below
+/// [`CREEP_FILL`], and is full once they are in (the editor is built
+/// right after).
 pub fn progress(elapsed: Duration, fonts_ready: bool) -> f32 {
     if fonts_ready {
         return 1.0;
     }
     let t = (elapsed.as_secs_f32() / EASE_TIME.as_secs_f32()).clamp(0.0, 1.0);
     let eased = 1.0 - (1.0 - t) * (1.0 - t);
-    WAITING_FILL * eased
+    let late = elapsed.saturating_sub(EASE_TIME).as_secs_f32() / CREEP_TIME.as_secs_f32();
+    WAITING_FILL * eased + (CREEP_FILL - WAITING_FILL) * (1.0 - (-late * 1.1).exp())
 }
 
 /// Paint the splash over the whole of `ui`. `texts` draws the tagline and
@@ -971,8 +999,18 @@ mod tests {
         assert_eq!(progress(Duration::ZERO, false), 0.0);
         let half = progress(EASE_TIME / 2, false);
         assert!(half > 0.4 && half < 0.8, "{half}");
-        // Without the fonts the bar stops at 80 %.
-        assert!((progress(EASE_TIME * 3, false) - WAITING_FILL).abs() < 1e-6);
+        // Without the fonts the bar reaches 80 %, then creeps on and never
+        // stands still, never full (#1388).
+        assert!((progress(EASE_TIME, false) - WAITING_FILL).abs() < 1e-6);
+        let mut last = progress(EASE_TIME, false);
+        for s in [5, 30, 60, 180] {
+            let p = progress(EASE_TIME + Duration::from_secs(s), false);
+            assert!(p > last && p < CREEP_FILL, "{s} s: {p}");
+            last = p;
+        }
+        assert!(progress(EASE_TIME + Duration::from_secs(3600), false) <= CREEP_FILL);
+        let late = progress(EASE_TIME + CREEP_TIME, false);
+        assert!(late > 0.89 && late < 0.92, "{late}");
         // With them it is full at once: no minimum time keeps the splash.
         assert!((progress(Duration::ZERO, true) - 1.0).abs() < 1e-6);
         assert!((progress(EASE_TIME / 2, true) - 1.0).abs() < 1e-6);
@@ -1039,6 +1077,7 @@ mod tests {
         crate::i18n::set_language("en");
         let ctx = egui::Context::default();
         let mut splash = Splash::start(&ctx, Some(Path::new("/tmp/a.cdr")));
+        splash.font_list_ready = || true;
         // No minimum time: the editor starts as soon as the last status
         // has been drawn once, with the fonts in or not.
         let steps = run_frames(&ctx, &mut splash, 4);
@@ -1051,6 +1090,7 @@ mod tests {
         crate::i18n::set_language("en");
         let ctx = egui::Context::default();
         let mut splash = Splash::start(&ctx, None);
+        splash.font_list_ready = || true;
         assert!(!splash.wait_for_fonts);
         // Whatever the font thread has done, the editor starts in two
         // frames, and the load it leaves is the shell's to install.
@@ -1064,11 +1104,54 @@ mod tests {
         assert!(!load.poll(&ctx));
     }
 
+    /// The editor is never built before the list of system fonts is in:
+    /// it would wait for it on the window's thread, with the window blank
+    /// and not answering for as long as the scan takes, minutes with
+    /// thousands of fonts or a slow disk (#1388). The splash keeps drawing
+    /// meanwhile, says it is loading fonts and its bar keeps moving.
+    #[test]
+    fn the_editor_waits_for_the_font_list_with_the_splash_drawn() {
+        crate::i18n::set_language("en");
+        let ctx = egui::Context::default();
+        let mut splash = Splash::start(&ctx, None);
+        splash.font_list_ready = || false;
+        assert!(!splash.wait_for_fonts);
+        for _ in 0..20 {
+            let mut out = ctx.run_ui(input(), |ui| {
+                assert_eq!(splash.update(ui), Step::Wait);
+            });
+            out.textures_delta.clear();
+            // Every frame asks for the next: the window keeps answering.
+            assert!(ctx.has_requested_repaint());
+            assert!(!out.shapes.is_empty());
+        }
+        assert_eq!(status_text(false, None), tr("splash.loading_fonts"));
+        // The list is in: the editor starts within two frames.
+        splash.font_list_ready = || true;
+        let steps = run_frames(&ctx, &mut splash, 4);
+        assert_eq!(steps, vec![Step::Wait, Step::Start]);
+    }
+
+    /// The program reads the system fonts on a thread of its own from its
+    /// start: the splash asks for that read, it never reads them itself.
+    #[test]
+    fn the_font_list_is_read_in_the_background() {
+        assert!(tracedraw_text::load_in_background());
+        // Asking again starts nothing new.
+        assert!(tracedraw_text::load_in_background());
+        let t = std::time::Instant::now();
+        while !tracedraw_text::fonts_loaded() && t.elapsed() < std::time::Duration::from_secs(60) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(tracedraw_text::fonts_loaded());
+    }
+
     #[test]
     fn a_language_that_needs_a_system_font_waits_for_it() {
         crate::i18n::set_language("en");
         let ctx = egui::Context::default();
         let mut splash = Splash::start(&ctx, None);
+        splash.font_list_ready = || true;
         splash.wait_for_fonts = true;
         let mut steps = Vec::new();
         for _ in 0..3000 {

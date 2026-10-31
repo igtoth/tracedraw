@@ -1595,12 +1595,13 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
         }
     }
     // Fit page to drawing, as Layout has it (#236); pale on an empty
-    // page.
-    let has_objects = app
-        .doc()
-        .page(app.page)
-        .ok()
-        .is_some_and(|p| p.layers.iter().any(|l| !l.shapes.is_empty()));
+    // page, or with All Pages on when no page has anything on it.
+    let has_objects = |p: &tracedraw_core::Page| p.layers.iter().any(|l| !l.shapes.is_empty());
+    let has_objects = if app.page_size_all {
+        app.doc().pages.iter().any(has_objects)
+    } else {
+        app.doc().page(app.page).ok().is_some_and(has_objects)
+    };
     // Autofit Page: a popup with the margin to leave around the drawing
     // (kept in the preferences) and the button that fits the page.
     let fit = pic_button(
@@ -1659,7 +1660,7 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
         )
     });
     if fitted {
-        app.fit_page_to_drawing_with_margin(app.settings.fit_page_margin);
+        app.autofit_pages(app.settings.fit_page_margin, app.page_size_all);
         app.fit_pending = true;
         egui::Popup::close_id(&ctx, popup_id);
     }

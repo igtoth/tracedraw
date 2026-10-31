@@ -13,6 +13,38 @@ pub fn browser_keeps_key(key: &str, shift: bool) -> bool {
     matches!(k.as_str(), "c" | "v" | "x") || (shift && k == "i")
 }
 
+/// A key pressed with AltGr held on Windows: browsers there report AltGr
+/// as Ctrl and Alt held together, with the `AltGraph` modifier state
+/// set, and the key types a character (`€ @ [ ] { } \` and the letters
+/// of many layouts), so it is no Ctrl or Alt shortcut (#1408). On Linux
+/// and macOS AltGr (Option) never sets Ctrl, and on Android it is the
+/// right Alt.
+pub fn typed_with_altgr(ctrl: bool, alt: bool, alt_graph: bool) -> bool {
+    alt_graph && ctrl && alt
+}
+
+/// Whether the page's key guard keeps a key pressed from the browser:
+/// the function keys, and Ctrl (or Cmd) with a key the editor binds,
+/// unless AltGr types a character with it ([`typed_with_altgr`]).
+pub fn guard_keeps_from_browser(
+    key: &str,
+    ctrl: bool,
+    meta: bool,
+    shift: bool,
+    alt: bool,
+    alt_graph: bool,
+) -> bool {
+    let function_key =
+        key.len() >= 2 && key.starts_with('F') && key[1..].chars().all(|c| c.is_ascii_digit());
+    if function_key {
+        return true;
+    }
+    if !(ctrl || meta) || (!meta && typed_with_altgr(ctrl, alt, alt_graph)) {
+        return false;
+    }
+    !browser_keeps_key(key, shift)
+}
+
 pub fn escape_html(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
@@ -48,6 +80,52 @@ mod tests {
         for k in ["r", "R", "s", "p", "d", "g", "i", "e", "f"] {
             assert!(!browser_keeps_key(k, false), "{k}");
         }
+    }
+
+    /// AltGr on Windows comes as Ctrl and Alt with the AltGraph state: its
+    /// characters reach the page's text input, while Ctrl and Ctrl+Alt
+    /// shortcuts without AltGr stay kept from the browser (#1408).
+    #[test]
+    fn characters_typed_with_altgr_are_left_to_the_browser() {
+        // AltGr+E (€), AltGr+Q (@ on a German keyboard), AltGr+7 ({),
+        // AltGr+A (Polish ą), and the AltGr key itself.
+        for k in ["€", "@", "{", "ą", "AltGraph"] {
+            assert!(
+                !guard_keeps_from_browser(k, true, false, false, true, true),
+                "{k}"
+            );
+        }
+        assert!(typed_with_altgr(true, true, true));
+        // Linux reports AltGr without Ctrl: nothing to keep anyway.
+        assert!(!guard_keeps_from_browser(
+            "@", false, false, false, false, true
+        ));
+        // Real shortcuts: Ctrl+R (Repeat), Ctrl+Alt+R, Cmd+R, F5.
+        assert!(guard_keeps_from_browser(
+            "r", true, false, false, false, false
+        ));
+        assert!(guard_keeps_from_browser(
+            "r", true, false, false, true, false
+        ));
+        assert!(guard_keeps_from_browser(
+            "r", false, true, false, false, false
+        ));
+        assert!(guard_keeps_from_browser(
+            "F5", false, false, false, false, false
+        ));
+        assert!(!typed_with_altgr(true, true, false));
+        assert!(!typed_with_altgr(true, false, true));
+        // Copy, cut, paste and the developer tools stay with the browser.
+        assert!(!guard_keeps_from_browser(
+            "c", true, false, false, false, false
+        ));
+        assert!(!guard_keeps_from_browser(
+            "I", true, false, true, false, false
+        ));
+        // Plain typing is never touched.
+        assert!(!guard_keeps_from_browser(
+            "a", false, false, false, false, false
+        ));
     }
 
     #[test]

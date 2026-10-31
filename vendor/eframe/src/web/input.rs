@@ -141,6 +141,13 @@ pub fn text_from_keyboard_event(event: &web_sys::KeyboardEvent) -> Option<String
         return None;
     }
 
+    // TraceDraw: any other named key ("AltGraph", "Dead", "Process",
+    // "Unidentified", the media keys ...) is no text either: a typed
+    // character is one letter, never a word of ASCII letters (#1408).
+    if key.chars().count() > 1 && key.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return None;
+    }
+
     Some(key)
 }
 
@@ -151,9 +158,16 @@ pub fn translate_key(key: &str) -> Option<egui::Key> {
 }
 
 pub fn modifiers_from_kb_event(event: &web_sys::KeyboardEvent) -> egui::Modifiers {
+    // TraceDraw: Windows browsers report AltGr as Ctrl and Alt held, with
+    // the `AltGraph` modifier state set. The key types a character
+    // (`€ @ { }`, the letters of many layouts): neither Ctrl nor Alt is
+    // held for it, as winit reports AltGr in the desktop app, so its text
+    // is kept and it is no Ctrl shortcut (#1408).
+    let alt_graph = event.ctrl_key() && event.alt_key() && event.get_modifier_state("AltGraph");
+    let ctrl = event.ctrl_key() && !alt_graph;
     egui::Modifiers {
-        alt: event.alt_key(),
-        ctrl: event.ctrl_key(),
+        alt: event.alt_key() && !alt_graph,
+        ctrl,
         shift: event.shift_key(),
 
         // Ideally we should know if we are running or mac or not,
@@ -162,7 +176,7 @@ pub fn modifiers_from_kb_event(event: &web_sys::KeyboardEvent) -> egui::Modifier
 
         // Ideally we should know if we are running or mac or not,
         // but this works good enough for now.
-        command: event.ctrl_key() || event.meta_key(),
+        command: ctrl || event.meta_key(),
     }
 }
 

@@ -420,9 +420,30 @@ fn install_copy_cut_paste(runner_ref: &WebRunner, target: &EventTarget) -> Resul
 
 fn install_window_events(runner_ref: &WebRunner, window: &EventTarget) -> Result<(), JsValue> {
     // Save-on-close
-    runner_ref.add_event_listener(window, "onbeforeunload", |_: web_sys::Event, runner| {
+    // TraceDraw: the event is `beforeunload`; `onbeforeunload` (the
+    // property's name) never fires, so nothing was saved on close (#1395).
+    runner_ref.add_event_listener(window, "beforeunload", |_: web_sys::Event, runner| {
         runner.save();
     })?;
+
+    // TraceDraw: save when the page is hidden (another tab, a minimized
+    // window, a phone's home screen, a tab being closed): the last moment
+    // a browser reliably gives a page that may be discarded without
+    // another event (#1395).
+    if let Some(document) = web_sys::window().and_then(|w| w.document()) {
+        runner_ref.add_event_listener(
+            &document,
+            "visibilitychange",
+            |_: web_sys::Event, runner| {
+                if web_sys::window()
+                    .and_then(|w| w.document())
+                    .is_some_and(|d| d.hidden())
+                {
+                    runner.save();
+                }
+            },
+        )?;
+    }
 
     // We want to handle the case of dragging the browser from one monitor to another,
     // which can cause the DPR to change without any resize event (e.g. Safari).

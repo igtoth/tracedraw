@@ -148,7 +148,7 @@ When several drawings have changes, it asks about each one; Cancel stops.
 
 ## Auto-backup and recovery {#recovery}
 
-On the desktop, TraceDraw keeps backups of your open drawings while
+TraceDraw keeps backups of your open drawings while
 auto-backup is on (the [[options.save]] page of
 [[menu.tools > menu.tools.options > menu.tools.options_app]] sets how often
 and where; every 20 minutes at first). Closing TraceDraw normally removes
@@ -158,4 +158,12 @@ If TraceDraw ended without closing, for example after a power cut, it offers
 the backups the next time it starts: [[dialog.recover]] opens each one as an
 unsaved drawing (Save then asks where to save it), and [[dialog.discard]]
 leaves the backups in their folder. Two TraceDraw windows running at once
-never offer each other's drawings.
+never offer each other's drawings. When the system quits TraceDraw without
+asking about unsaved drawings (the Quit of the macOS menu, logging out)
+or sends the Android app to the background, their backups are written at
+once, and the next start offers them.
+
+In the browser version the backups are kept in the browser's storage for
+the site, a folder of their own for each tab. Closing or reloading a tab
+with unsaved drawings asks first, and the next visit offers what the tab
+left; [[dialog.discard]] deletes those backups.
