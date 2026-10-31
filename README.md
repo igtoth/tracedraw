@@ -20,14 +20,14 @@
 
 <p align="center">
   <a href="https://github.com/igtoth/tracedraw/releases"><b>Download</b></a> &middot;
-  <a href="https://apps.microsoft.com/detail/9P50L12VHF33">Microsoft Store</a> &middot;
+  <a href="https://apps.microsoft.com/detail/9P50L12VHF33">Microsoft Store</a>* &middot;
   <a href="https://igtoth.github.io/tracedraw/">Open it in the browser</a> &middot;
   <a href="docs/features.md">Feature status</a> &middot;
   <a href="CONTRIBUTING.md">Contribute</a>
 </p>
 
 <p align="center">
-  <sub>The <a href="https://apps.microsoft.com/detail/9P50L12VHF33">Microsoft Store</a> version is signed and updates itself, but each version must pass the Store's certification first (hours to days), so it is often one or more releases behind the <a href="https://github.com/igtoth/tracedraw/releases/latest">latest download</a>.</sub>
+  <sub>* The <a href="https://apps.microsoft.com/detail/9P50L12VHF33">Microsoft Store</a> version is signed and updates itself, but each version must pass the Store's certification first (hours to days), so it is often one or more releases behind the <a href="https://github.com/igtoth/tracedraw/releases/latest">latest download</a>.</sub>
 </p>
 
 <p align="center">
