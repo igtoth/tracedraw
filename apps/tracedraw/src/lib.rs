@@ -20,6 +20,8 @@ mod ai_image;
 mod anchors;
 #[cfg(target_os = "android")]
 mod android;
+#[cfg(any(target_os = "android", test))]
+mod android_end;
 #[cfg(test)]
 mod android_package;
 mod app;

@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Android: the app no longer freezes for good when the system relaunches it. A change of the system's resource overlays (new wallpaper colours, another icon shape, a display cutout switched on) or of the screen density relaunches the activity, and the app then stayed on the system's starting window, never drawing; an Android 14 emulator does that right after booting, which failed about one CI start in four (and both runs of the 0.30.0 release). The app now backs its drawings up, ends its process and is started again by the system, offering them; the other configuration changes it follows by itself (font size and weight, colour mode, touch screen, mobile network) no longer relaunch it at all. The CI emulator check relaunches the app on purpose and wants it back.
 - Options > Tools: the pages come in a new order (Pick, Eraser, Zoom/Pan, Freehand/Bézier, Shape Recognition, Rectangle, Ellipse, Polygon, Graph Paper, Spiral, Table, Dimension, Connector, Mesh Fill); Curve tools is now Freehand/Bézier, and new Shape Recognition (recognition and smoothing levels), Dimension (precision, units, prefix and suffix of new dimensions), Connector (corner radius) and Mesh Fill (columns and rows) pages edit the same defaults as the property bars, kept across restarts and put back by Cancel.
 
 ## 0.30.0 (2026-10-31)

@@ -18,6 +18,7 @@ import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Process;
 import android.provider.OpenableColumns;
 import android.util.Log;
 import android.view.ViewGroup;
@@ -62,11 +63,57 @@ public class TraceDrawActivity extends NativeActivity {
     /** The view the on-screen keyboard types into. */
     private TextInputView textInput;
 
+    /**
+     * Wait, at most `timeoutMs`, until the editor's thread has let go of
+     * the activity's window, which it does after backing the drawings up
+     * (eframe's save on suspend). Implemented in Rust (android.rs).
+     */
+    private native void nativeAwaitWindowGone(long timeoutMs);
+
+    /** How long the end of the activity waits for the backup. */
+    private static final long BACKUP_WAIT_MS = 10000;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         textInput = new TextInputView(this);
         addContentView(textInput, new ViewGroup.LayoutParams(1, 1));
+    }
+
+    /**
+     * The activity ends: relaunched by the system (a change of its
+     * resource overlays, which no configChanges entry can take over, or of
+     * the screen density) or finished. NativeActivity.onDestroy then waits
+     * for the editor's thread to return from android_main, which it never
+     * does (winit runs one event loop per process and cannot start
+     * another), so the app froze for good with the system's starting
+     * window on the screen. Instead, once the editor has given up the
+     * window (and backed the drawings up while doing so, which happens
+     * inside super.onDestroy), the process ends; the manifest's
+     * stateNotNeeded makes the system start the activity again in a new
+     * process, which offers the backed-up drawings.
+     */
+    @Override
+    protected void onDestroy() {
+        final boolean relaunch = isChangingConfigurations();
+        Thread end = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    nativeAwaitWindowGone(BACKUP_WAIT_MS);
+                } catch (UnsatisfiedLinkError e) {
+                    // The editor's thread has not started: nothing to back up.
+                    Log.w(TAG, "ending: " + e);
+                }
+                Log.i(TAG, relaunch
+                        ? "the activity is relaunched: the process ends and the system starts it again"
+                        : "the activity ends: the process ends");
+                Process.killProcess(Process.myPid());
+            }
+        }, "tracedraw-end");
+        end.setDaemon(true);
+        end.start();
+        super.onDestroy();
     }
 
     // ----- the on-screen keyboard ---------------------------------------------
