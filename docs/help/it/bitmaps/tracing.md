@@ -8,8 +8,9 @@ scansionato, uno schizzo, una foto.
 
 Selezionate una bitmap e scegliete
 [[menu.bitmaps > menu.bitmaps.quick_trace]]. Usa la preimpostazione scelta
-nella pagina [[options.bitmap_tracing]] delle opzioni globali (Clipart
-all'inizio).
+nella pagina [[options.bitmap_tracing]] delle opzioni globali
+([[menu.bitmaps.trace_optimized]] all'inizio, che sceglie il dettaglio per
+ogni immagine: il più fedele possibile con il minor numero di nodi).
 
 [[menu.bitmaps.repeat_last_trace]] ricalca di nuovo la bitmap selezionata come l'ultimo ricalco, senza finestra di dialogo, e [[menu.bitmaps.last_trace_settings]] apre la finestra di dialogo con le sue impostazioni. Anche il menu contestuale di una bitmap ha questi comandi, con [[menu.bitmaps.centerline_trace]] e [[menu.bitmaps.outline_trace]].
 
@@ -22,7 +23,8 @@ una per aprire la finestra di dialogo.
 - **Ricalco del contorno** riempie le aree di colore con forme:
   [[menu.bitmaps.trace_line_art]], [[menu.bitmaps.trace_logo]],
   [[menu.bitmaps.trace_detailed_logo]], [[menu.bitmaps.trace_clipart]],
-  [[menu.bitmaps.trace_low_quality]] e [[menu.bitmaps.trace_high_quality]].
+  [[menu.bitmaps.trace_low_quality]], [[menu.bitmaps.trace_high_quality]] e
+  [[menu.bitmaps.trace_optimized]].
 - **Ricalco della linea centrale** segue le linee con curve aperte:
   [[menu.bitmaps.trace_technical]] e [[menu.bitmaps.trace_line_drawing]].
 
@@ -34,7 +36,8 @@ il ricalco viene rifatto a ogni cambio di impostazione: non c'è nulla da
 premere per vedere il risultato. Sotto l'anteprima una riga conta le
 **curve**, i **nodi** e i **colori** del risultato. Fate clic su
 [[dialog.ok]] per collocare le forme sopra la bitmap, le più scure per
-prime, o su [[dialog.cancel]] per lasciare la bitmap com'è.
+prime, o su [[dialog.cancel]] per lasciare la bitmap com'è; entrambi
+stanno in basso a destra nella finestra di dialogo.
 
 ## L'anteprima {#preview}
 
@@ -54,6 +57,11 @@ ingrandiscono e spostano. La rotellina ingrandisce intorno al puntatore e
 un trascinamento sposta l'immagine; i due riquadri si muovono insieme. Le
 parti trasparenti mostrano una scacchiera.
 
+Nella versione per browser l'anteprima di un'immagine grande viene fatta da
+una copia più piccola, e una nota in rosso sotto l'anteprima lo segnala: i
+dettagli fini possono sembrare grossolani, ma [[dialog.ok]] ricalca
+l'immagine intera. La versione desktop mostra l'anteprima esatta.
+
 ## Impostazioni {#settings}
 
 La scheda [[dialog.trace_tab_settings]] contiene:
@@ -62,7 +70,9 @@ La scheda [[dialog.trace_tab_settings]] contiene:
   [[dialog.trace_image_type]] la preimpostazione. Sceglierne una porta i
   cursori sottostanti ai valori adatti a quel tipo di immagine.
 - [[dialog.detail]] (da 0 a 100): più dettaglio conserva aree più piccole e
-  linee più sottili; meno dettaglio leviga macchie e grana.
+  linee più sottili; meno dettaglio leviga macchie e grana. Con
+  [[menu.bitmaps.trace_optimized]] il dettaglio viene scelto per ogni
+  immagine e il cursore è in grigio.
 - [[dialog.smoothing]] (da 0 a 100, 25 all'inizio): curve più morbide con
   meno nodi.
 - [[dialog.corner_smoothness]] (da 0 a 100): angoli più arrotondati.
@@ -87,6 +97,13 @@ La scheda [[dialog.trace_tab_settings]] contiene:
 Le impostazioni che non valgono per il tipo di ricalco in uso sono in
 grigio: un ricalco della linea centrale legge solo il dettaglio e la
 levigatura.
+
+[[dialog.trace_optimize]], in basso a sinistra nella finestra di dialogo,
+prova diversi livelli di dettaglio sull'immagine, confronta ogni ricalco con
+essa e mette nel cursore [[dialog.detail]] il dettaglio che la disegna più
+fedelmente con il minor numero di nodi. È un passo che potete annullare. Se
+cambiate le impostazioni prima che abbia finito, il suo risultato viene
+scartato.
 
 ## Colori {#colors}
 

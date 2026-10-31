@@ -9,7 +9,8 @@ una foto.
 Seleccione un mapa de bits y elija
 [[menu.bitmaps > menu.bitmaps.quick_trace]]. Usa el ajuste preestablecido
 elegido en la página [[options.bitmap_tracing]] de las opciones globales
-(Clipart al principio).
+([[menu.bitmaps.trace_optimized]] al principio, que elige el detalle para
+cada imagen: lo más fiel posible con el menor número de nodos).
 
 [[menu.bitmaps.repeat_last_trace]] calca de nuevo el mapa de bits seleccionado como el último calco, sin cuadro de diálogo, y [[menu.bitmaps.last_trace_settings]] abre el cuadro de diálogo con sus ajustes. El menú contextual de un mapa de bits también tiene estos comandos, junto con [[menu.bitmaps.centerline_trace]] y [[menu.bitmaps.outline_trace]].
 
@@ -22,7 +23,8 @@ uno para abrir el cuadro de diálogo.
 - **Calco por contorno** rellena las áreas de color con formas:
   [[menu.bitmaps.trace_line_art]], [[menu.bitmaps.trace_logo]],
   [[menu.bitmaps.trace_detailed_logo]], [[menu.bitmaps.trace_clipart]],
-  [[menu.bitmaps.trace_low_quality]] y [[menu.bitmaps.trace_high_quality]].
+  [[menu.bitmaps.trace_low_quality]], [[menu.bitmaps.trace_high_quality]] y
+  [[menu.bitmaps.trace_optimized]].
 - **Calco por línea central** sigue las líneas con curvas abiertas:
   [[menu.bitmaps.trace_technical]] y [[menu.bitmaps.trace_line_drawing]].
 
@@ -34,7 +36,8 @@ derecha, y el calco se rehace cada vez que cambia un ajuste: no hay nada que
 pulsar para ver el resultado. Bajo la vista previa, una línea cuenta las
 **curvas**, los **nodos** y los **colores** del resultado. Haga clic en
 [[dialog.ok]] para colocar las formas sobre el mapa de bits, las más oscuras
-primero, o en [[dialog.cancel]] para dejar el mapa de bits como está.
+primero, o en [[dialog.cancel]] para dejar el mapa de bits como está;
+ambos están en la parte inferior derecha del cuadro de diálogo.
 
 ## La vista previa {#preview}
 
@@ -57,6 +60,11 @@ acercan y desplazan. La rueda amplía alrededor del puntero y un arrastre
 mueve la imagen; ambos paneles se mueven juntos. Las partes transparentes
 muestran un tablero de ajedrez.
 
+En el navegador, una imagen grande se previsualiza a partir de una copia
+más pequeña, y una nota en rojo bajo la vista previa lo indica: el detalle
+fino puede verse más tosco ahí, pero [[dialog.ok]] calca la imagen
+completa. La versión de escritorio muestra la vista previa con exactitud.
+
 ## Ajustes {#settings}
 
 La pestaña [[dialog.trace_tab_settings]] contiene:
@@ -65,7 +73,9 @@ La pestaña [[dialog.trace_tab_settings]] contiene:
   [[dialog.trace_image_type]] el ajuste preestablecido. Elegir uno pone los
   controles de abajo en los valores que convienen a ese tipo de imagen.
 - [[dialog.detail]] (0 a 100): más detalle conserva áreas más pequeñas y
-  líneas más finas; menos detalle suaviza motas y grano.
+  líneas más finas; menos detalle suaviza motas y grano. Con
+  [[menu.bitmaps.trace_optimized]] el detalle se elige para cada imagen y
+  el control aparece atenuado.
 - [[dialog.smoothing]] (0 a 100, 25 al principio): curvas más suaves con
   menos nodos.
 - [[dialog.corner_smoothness]] (0 a 100): esquinas más redondeadas.
@@ -89,6 +99,12 @@ La pestaña [[dialog.trace_tab_settings]] contiene:
 
 Los ajustes que no se aplican al tipo de calco actual aparecen atenuados:
 un calco por línea central solo lee el detalle y el suavizado.
+
+[[dialog.trace_optimize]], en la parte inferior izquierda del cuadro de
+diálogo, prueba varios niveles de detalle en la imagen, compara cada calco
+con ella y pone en el control [[dialog.detail]] el detalle que la dibuja
+con más fidelidad usando menos nodos. Es un paso que puede deshacer. Si
+cambia los ajustes antes de que termine, su resultado se descarta.
 
 ## Colores {#colors}
 

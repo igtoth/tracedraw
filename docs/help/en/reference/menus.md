@@ -294,6 +294,7 @@ only the Welcome Screen is open. The menus can show your own shortcuts; see
 | [[menu.bitmaps.trace_clipart]] | [Tracing](../bitmaps/tracing.md) |
 | [[menu.bitmaps.trace_low_quality]] | [Tracing](../bitmaps/tracing.md) |
 | [[menu.bitmaps.trace_high_quality]] | [Tracing](../bitmaps/tracing.md) |
+| [[menu.bitmaps.trace_optimized]] | [Tracing](../bitmaps/tracing.md) |
 | [[menu.bitmaps.plugins]] | [Bitmaps](../bitmaps/index.md) |
 | [[menu.bitmaps.bitmap_mask]] | [Bitmap mask](../bitmaps/bitmap-mask.md) |
 

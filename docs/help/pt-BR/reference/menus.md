@@ -295,6 +295,7 @@ próprios atalhos; veja
 | [[menu.bitmaps.trace_clipart]] | [Vetorizar bitmaps](../bitmaps/tracing.md) |
 | [[menu.bitmaps.trace_low_quality]] | [Vetorizar bitmaps](../bitmaps/tracing.md) |
 | [[menu.bitmaps.trace_high_quality]] | [Vetorizar bitmaps](../bitmaps/tracing.md) |
+| [[menu.bitmaps.trace_optimized]] | [Vetorizar bitmaps](../bitmaps/tracing.md) |
 | [[menu.bitmaps.plugins]] | [Bitmaps](../bitmaps/index.md) |
 | [[menu.bitmaps.bitmap_mask]] | [Mascarar cores de bitmaps](../bitmaps/bitmap-mask.md) |
 
