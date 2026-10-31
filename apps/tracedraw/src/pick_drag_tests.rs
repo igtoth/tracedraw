@@ -15967,3 +15967,50 @@ fn step_and_repeat_previews_its_copies_while_the_panel_is_worked_in() {
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
     assert!(!app.step_preview_shown);
 }
+
+/// #1385: guidelines locked from the Objects panel's Guides row (every
+/// guideline of the page) cannot be rotated, moved, nudged or deleted
+/// from the canvas: a double click shows no rotation handles, a drag
+/// leaves the guideline, the arrow keys and Delete change nothing.
+#[test]
+fn locked_guidelines_cannot_be_rotated_moved_nudged_or_deleted() {
+    use tracedraw_core::document::Guide;
+    let (ctx, mut app, _id) = setup();
+    app.add_guide(Guide::horizontal(150.0));
+    app.add_guide(Guide::vertical(140.0));
+    // What the padlock of the Guides row does.
+    let all: Vec<usize> = (0..app.page_guides().len()).collect();
+    app.set_guides_locked(&all, true);
+    let before = app.page_guides();
+    let steps = app.engine.history_labels().0.len();
+    let on_h = app.view.to_screen(Point::new(100.0, 150.0));
+    double_click_at(&ctx, &mut app, on_h);
+    assert_eq!(app.selected_guides, vec![0]);
+    assert_eq!(app.guide_rotate, None);
+    assert!(app.guide_rotate_handles().is_none());
+    // Two more clicks, as a user trying again.
+    click_at(&ctx, &mut app, on_h, Modifiers::NONE);
+    click_at(&ctx, &mut app, on_h, Modifiers::NONE);
+    assert!(app.guide_rotate_handles().is_none());
+    let away = app.view.to_screen(Point::new(100.0, 100.0));
+    drag(&ctx, &mut app, on_h, away, Modifiers::NONE, Vec::new());
+    for k in [egui::Key::ArrowUp, egui::Key::ArrowLeft, egui::Key::Delete] {
+        frame(
+            &ctx,
+            &mut app,
+            vec![key(k, Modifiers::NONE)],
+            Modifiers::NONE,
+        );
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    app.select_all_guides();
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Delete, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(app.page_guides(), before);
+    assert_eq!(app.engine.history_labels().0.len(), steps, "no undo step");
+}

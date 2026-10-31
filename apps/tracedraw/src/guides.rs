@@ -494,19 +494,52 @@ impl App {
     }
 
     /// Delete every guideline of one kind on the page (the Guidelines
-    /// docker's Clear): horizontal, vertical or angled. One undo step.
+    /// docker's Clear): horizontal, vertical or angled. Locked ones stay
+    /// (#1385); with only locked ones of the kind the status bar says so.
+    /// One undo step.
     pub fn clear_guides_of_kind(&mut self, kind: crate::ui::layout_options::GuideKind) {
         use crate::ui::layout_options::GuideKind;
-        let kept: Vec<Guide> = self
-            .page_guides()
-            .into_iter()
-            .filter(|g| GuideKind::of(&g.line) != kind)
+        let all = self.page_guides();
+        let kept: Vec<Guide> = all
+            .iter()
+            .filter(|g| g.locked || GuideKind::of(&g.line) != kind)
+            .copied()
             .collect();
-        if kept.len() != self.page_guides().len() {
+        if kept.len() != all.len() {
             self.set_guides(kept, "Clear Guidelines");
             self.selected_guides.clear();
             self.guide_rotate = None;
+        } else if all.iter().any(|g| GuideKind::of(&g.line) == kind) {
+            self.status = crate::i18n::tr("status.guideline_locked");
         }
+    }
+
+    /// Change the selected guidelines that are not locked with `edit`
+    /// (the Guidelines docker's colour and style), one undo step named
+    /// `label`. A locked guideline keeps its look (#1385); with only
+    /// locked ones selected the status bar says so. False when nothing
+    /// changed.
+    pub fn edit_selected_guides(&mut self, label: &'static str, edit: impl Fn(&mut Guide)) -> bool {
+        let mut guides = self.page_guides();
+        let before = guides.clone();
+        let mut locked = false;
+        for &i in &self.selected_guides {
+            if let Some(g) = guides.get_mut(i) {
+                if g.locked {
+                    locked = true;
+                } else {
+                    edit(g);
+                }
+            }
+        }
+        if guides == before {
+            if locked {
+                self.status = crate::i18n::tr("status.guideline_locked");
+            }
+            return false;
+        }
+        self.set_guides(guides, label);
+        true
     }
 
     /// Clear the guideline selection and rotate mode.
@@ -904,6 +937,46 @@ mod tests {
                 angle: 45.0
             }
         );
+    }
+
+    /// #1385: the Guidelines docker's Clear, colour and style leave a
+    /// locked guideline as it is.
+    #[test]
+    fn clear_colour_and_style_leave_locked_guides_alone() {
+        use crate::ui::layout_options::GuideKind;
+        use tracedraw_core::document::GuideStyle;
+        let mut app = app();
+        app.add_guide(Guide::vertical(10.0));
+        app.add_guide(Guide::vertical(20.0));
+        app.add_guide(Guide::horizontal(30.0));
+        app.set_guides_locked(&[1], true);
+        let locked = app.page_guides()[1];
+        app.select_all_guides();
+        let red = tracedraw_core::Color::rgb8(255, 0, 0);
+        assert!(app.edit_selected_guides("Guideline Color", |g| g.color = Some(red)));
+        let style = GuideStyle::ALL
+            .into_iter()
+            .find(|s| *s != locked.style)
+            .expect("another style");
+        assert!(app.edit_selected_guides("Guideline Style", |g| g.style = style));
+        let g = app.page_guides();
+        assert_eq!(g[1], locked);
+        assert_eq!(g[0].color, Some(red));
+        assert_eq!(g[2].style, style);
+        // Only the locked one selected: nothing changes, no undo step.
+        app.selected_guides = vec![1];
+        let steps = app.engine.history_labels().0.len();
+        assert!(!app.edit_selected_guides("Guideline Color", |g| g.color = None));
+        assert_eq!(app.engine.history_labels().0.len(), steps);
+        assert_eq!(app.page_guides()[1], locked);
+        // Clear takes the unlocked verticals, the locked one stays.
+        app.clear_guides_of_kind(GuideKind::Vertical);
+        let g = app.page_guides();
+        assert_eq!(g.len(), 2);
+        assert!(g.contains(&locked));
+        // Only the locked vertical left: Clear changes nothing.
+        app.clear_guides_of_kind(GuideKind::Vertical);
+        assert_eq!(app.page_guides().len(), 2);
     }
 
     #[test]

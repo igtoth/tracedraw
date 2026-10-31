@@ -153,9 +153,13 @@ stand for a distance in the world (`drawing_scale.rs`):
   pivot where it was clicked and two curved arrows 70 px along it.
   Dragging an arrow turns the guideline about the pivot in whole degrees;
   0 and 180 make it horizontal, 90 and 270 vertical.
-- Locked guidelines can be selected but not moved, rotated or deleted: a
-  click on a locked guideline never shows its rotation handles, and
-  locking one that shows them hides them (#1385).
+- Locked guidelines can be selected but not moved, rotated, nudged,
+  deleted or edited: a click or double click on a locked guideline never
+  shows its rotation handles, and locking one that shows them hides them;
+  the Guidelines docker's Clear, colour and style leave locked ones as
+  they are (the status bar says the guideline is locked when nothing
+  else changed). The padlock of the Guides row in the Objects panel
+  locks or unlocks every guideline of the page the same way (#1385).
 - The pointer over a guideline (where no object is) shows the arrows
   across it: up and down for a horizontal one, sideways for a vertical
   one, the move arrows for a slanted one, the plain arrow for a locked
@@ -225,6 +229,8 @@ properties for new objects (see `object-styles.md`), for new drawings.
 - `guides::tests::dropping_a_guide_outside_the_window_deletes_it`
 - `guides::tests::locked_guides_select_but_do_not_move_or_delete`
 - `guides::tests::locked_guide_shows_no_rotation_handles`
+- `guides::tests::clear_colour_and_style_leave_locked_guides_alone`
+- `pick_drag_tests::locked_guidelines_cannot_be_rotated_moved_nudged_or_deleted`
 - `pick_drag_tests::arrow_keys_nudge_the_selected_guidelines`
 - `guides::tests::second_click_rotates_a_guide_about_the_clicked_point`
 - `ui::layout_options::tests::*` (form origin, presets)

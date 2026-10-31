@@ -1330,13 +1330,7 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
             );
             if let Some(c) = picked {
                 if any {
-                    let mut gs = guides.clone();
-                    for i in &app.selected_guides {
-                        if let Some(g) = gs.get_mut(*i) {
-                            g.color = Some(c);
-                        }
-                    }
-                    app.set_guides(gs, "Guideline Color");
+                    app.edit_selected_guides("Guideline Color", |g| g.color = Some(c));
                 } else {
                     let mut meta = app.doc().metadata.clone();
                     meta.guides.color = c;
@@ -1353,13 +1347,7 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
                     .show_ui(ui, |ui| {
                         for s in GuideStyle::ALL {
                             if ui.selectable_label(s == style, tr(style_key(s))).clicked() {
-                                let mut gs = guides.clone();
-                                for i in &app.selected_guides {
-                                    if let Some(g) = gs.get_mut(*i) {
-                                        g.style = s;
-                                    }
-                                }
-                                app.set_guides(gs, "Guideline Style");
+                                app.edit_selected_guides("Guideline Style", |g| g.style = s);
                             }
                         }
                     })
