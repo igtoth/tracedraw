@@ -2329,8 +2329,20 @@ impl App {
         }
     }
 
-    /// Text > Convert: artistic to paragraph text or back.
+    /// Text > Convert: artistic to paragraph text or back. The letters stay
+    /// where they were: the new text is moved so its first letter lands
+    /// on the old one's place, in the text's own space. A frame is as
+    /// large as the text's own box (not its box on the page, which a
+    /// turned, scaled or moved text no longer matches) plus 2 mm; the
+    /// frame's place came from the box on the page and moved texts that
+    /// had a transform of their own away (#1238).
     pub fn toggle_text_kind(&mut self) {
+        use tracedraw_core::document::text_glyph_layout;
+        // The pen position of the first glyph, in the text's own space.
+        let first_letter = |kind: &ShapeKind| {
+            text_glyph_layout(kind)
+                .and_then(|l| l.glyphs.first().map(|g| g.transform * Point::ZERO))
+        };
         for s in self.text_shapes() {
             let ShapeKind::Text {
                 spans,
@@ -2343,37 +2355,47 @@ impl App {
             else {
                 continue;
             };
-            let b = s.bounds();
+            let local = s.local_path().bounding_box();
+            let local = if local.width().is_finite() && local.height().is_finite() {
+                local
+            } else {
+                Rect::from_origin_size(origin, (0.0, 0.0))
+            };
             let new_frame = match frame {
                 Some(_) => None,
                 None => Some(Size::new(
-                    b.width().max(10.0) + 2.0,
-                    b.height().max(5.0) + 2.0,
+                    local.width().max(10.0) + 2.0,
+                    local.height().max(5.0) + 2.0,
                 )),
             };
-            let new_origin = match (frame, new_frame) {
-                (None, Some(_)) => {
-                    Point::new(origin.x, origin.y - (b.height() - (b.y1 - origin.y)))
-                }
+            // A first guess from the box, then the first letter's place.
+            let guess = match (frame, new_frame) {
+                (None, Some(f)) => Point::new(local.x0, local.y1 + 1.0 - f.height),
                 (Some(_), None) => Point::new(
-                    origin.x,
-                    b.y1 - spans
-                        .first()
-                        .map(|s| s.size_pt * 25.4 / 72.0)
-                        .unwrap_or(5.0),
+                    local.x0,
+                    local.y1
+                        - spans
+                            .first()
+                            .map(|s| s.size_pt * 25.4 / 72.0)
+                            .unwrap_or(5.0),
                 ),
                 _ => origin,
             };
+            let make = |origin: Point| ShapeKind::Text {
+                spans: spans.clone(),
+                origin,
+                frame: new_frame,
+                align,
+                para: para.clone(),
+                on_path: on_path.clone(),
+            };
+            let new_origin = match (first_letter(&s.kind), first_letter(&make(guess))) {
+                (Some(was), Some(now)) => guess + (was - now),
+                _ => guess,
+            };
             self.run(Command::SetShapeKind {
                 shape: s.id,
-                kind: ShapeKind::Text {
-                    spans,
-                    origin: new_origin,
-                    frame: new_frame,
-                    align,
-                    para,
-                    on_path,
-                },
+                kind: make(new_origin),
             });
         }
     }

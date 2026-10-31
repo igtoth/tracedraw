@@ -429,6 +429,13 @@ on its own line, which is why the lines are joined first.
   typing, linking and resizing (`textflow.rs`, links kept in the object
   data as `text.next` and `text.prev`). Unlink leaves each frame with the
   text it shows.
+- Text > Convert keeps the letters in place both ways: the new frame
+  (paragraph text) is the text's own box plus 2 mm, and the new text is
+  moved so that its first letter sits where the old one's did, in the
+  text's own space; a text with a transform of its own (moved, scaled or
+  turned, as the texts of an opened `.cdr` file are) jumped away when
+  the frame was placed from its box on the page (#1238,
+  `converting_text_keeps_its_letters_in_place`).
 - The flow tab (#371): a paragraph frame that is picked, or whose text
   does not fit, has a tab under its bottom edge's middle, below the
   selection's bottom handle (a down arrow when the text does not fit,
