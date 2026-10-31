@@ -152,8 +152,13 @@ Number fields show their value at the left and are typed into: a click
 selects the value, Enter or leaving the field applies it, Esc puts it
 back. A comma or a point marks decimals; sums work (`10+5`, `2*3,5`,
 brackets); a distance typed with another unit is converted (`1 in` in a
-millimetre field is 25.4 mm). Values outside a field's range are brought
-into it (`ui::field::tests`). Every number field has a pair of spin
+millimetre field is 25.4 mm), also inside a sum, each number in its own
+unit and a number without one in the field's: the value shown with `/ 2`
+added halves it (`60.352 mm / 2`), and `24 mm + 1 in`, `24mm+20pt` and
+`(16mm*2)+4in+2pt` add up in the field's unit (#1495). Percent and degree
+marks are read past (`50 % * 2`). The zoom field of the standard bar reads
+sums too. Values outside a field's range are brought into it
+(`ui::field::tests`). Every number field has a pair of spin
 arrows at its right (11 px): a click on one steps the value by a unit
 (or the step the field was given), as does the mouse wheel over the
 field; Shift steps ten times as much, Ctrl a tenth; a whole-number field

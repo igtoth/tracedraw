@@ -214,9 +214,10 @@ fn zoom_box(app: &mut App, ui: &mut Ui, id: &str, width: f32) {
                     ui.data_mut(|d| d.remove::<String>(edit_id));
                 }
                 if r.lost_focus() {
-                    if let Ok(v) = text.trim().trim_end_matches('%').trim().parse::<f32>() {
+                    // Sums and products too, as in the number fields (#1495).
+                    if let Some(v) = crate::ui::field::parse(&text, None) {
                         if v > 0.0 {
-                            app.set_zoom_percent(v);
+                            app.set_zoom_percent(v as f32);
                         }
                     }
                 }

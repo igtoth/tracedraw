@@ -54,7 +54,10 @@ that kind of object. Each tool adds its own settings, explained on the page
 of the tool.
 
 In number fields you can type a sum such as `10+5`, or a value in another
-unit such as `1 in`, which is converted to the drawing units. Drag left or
+unit such as `1 in`, which is converted to the drawing units. Units work
+inside a sum too: add `/ 2` after the value shown to halve it, or type
+`24 mm + 1 in` or `(16mm*2)+4in+2pt`; a number without a unit is in the
+field's unit. Drag left or
 right on a field's arrows, or on its label, to slide the value down or up
 (<kbd>Shift</kbd> for bigger steps, <kbd>Ctrl</kbd> for finer ones).
 
