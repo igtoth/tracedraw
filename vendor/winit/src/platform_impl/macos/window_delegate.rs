@@ -9,7 +9,7 @@ use core_graphics::display::{CGDisplay, CGPoint};
 use monitor::VideoModeHandle;
 use objc2::rc::{autoreleasepool, Retained};
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{declare_class, msg_send_id, mutability, sel, ClassType, DeclaredClass};
+use objc2::{declare_class, msg_send, msg_send_id, mutability, sel, ClassType, DeclaredClass};
 use objc2_app_kit::{
     NSAppKitVersionNumber, NSAppKitVersionNumber10_12, NSAppearance, NSAppearanceCustomization,
     NSAppearanceNameAqua, NSApplication, NSApplicationPresentationOptions, NSBackingStoreType,
@@ -22,7 +22,7 @@ use objc2_foundation::{
     ns_string, CGFloat, MainThreadMarker, NSArray, NSCopying, NSDictionary, NSKeyValueChangeKey,
     NSKeyValueChangeNewKey, NSKeyValueChangeOldKey, NSKeyValueObservingOptions, NSObject,
     NSObjectNSDelayedPerforming, NSObjectNSKeyValueObserverRegistration, NSObjectProtocol, NSPoint,
-    NSRect, NSSize, NSString,
+    NSRect, NSSize, NSString, NSUInteger,
 };
 use tracing::{trace, warn};
 
@@ -32,6 +32,8 @@ use super::monitor::{self, flip_window_screen_coordinates, get_display_id};
 use super::observer::RunLoop;
 use super::view::WinitView;
 use super::window::WinitWindow;
+// TraceDraw: the pointer's place during a drag of files (#1142).
+use super::DEVICE_ID;
 use super::{ffi, Fullscreen, MonitorHandle, OsError, WindowId};
 use crate::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Position, Size};
 use crate::error::{ExternalError, NotSupportedError, OsError as RootOsError};
@@ -379,12 +381,25 @@ declare_class!(
             };
             let filenames: Retained<NSArray<NSString>> = unsafe { Retained::cast(filenames) };
 
+            // TraceDraw: where the drag is, before the files (#1142).
+            self.queue_drag_position(sender);
             filenames.into_iter().for_each(|file| {
                 let path = PathBuf::from(file.to_string());
                 self.queue_event(WindowEvent::HoveredFile(path));
             });
 
             true
+        }
+
+        /// TraceDraw: invoked as the dragged image moves over the window;
+        /// its place goes out as a cursor move (#1142). The operation is a
+        /// copy, as `draggingEntered:` answers.
+        #[method(draggingUpdated:)]
+        fn dragging_updated(&self, sender: &NSObject) -> NSUInteger {
+            trace_scope!("draggingUpdated:");
+            self.queue_drag_position(sender);
+            // NSDragOperationCopy
+            1
         }
 
         /// Invoked when the image is released
@@ -408,6 +423,8 @@ declare_class!(
             };
             let filenames: Retained<NSArray<NSString>> = unsafe { Retained::cast(filenames) };
 
+            // TraceDraw: where the files were let go, before them (#1142).
+            self.queue_drag_position(sender);
             filenames.into_iter().for_each(|file| {
                 let path = PathBuf::from(file.to_string());
                 self.queue_event(WindowEvent::DroppedFile(path));
@@ -818,6 +835,23 @@ impl WindowDelegate {
 
     pub(crate) fn queue_event(&self, event: WindowEvent) {
         self.ivars().app_delegate.maybe_queue_window_event(self.window().id(), event);
+    }
+
+    /// TraceDraw: the place of a drag of files over the window, from the
+    /// dragging info `sender`, goes out as a cursor move: AppKit sends the
+    /// view no mouse moves while files are dragged, and where they are
+    /// let go decides what TraceDraw does with them (TraceDraw #1142).
+    fn queue_drag_position(&self, sender: &NSObject) {
+        // SAFETY: `sender` conforms to NSDraggingInfo, whose
+        // `draggingLocation` is the pointer in the window's base
+        // coordinates.
+        let in_window: NSPoint = unsafe { msg_send![sender, draggingLocation] };
+        // The view is flipped: its origin is at the top left, as winit's
+        // cursor positions are.
+        let in_view = self.view().convertPoint_fromView(in_window, None);
+        let position =
+            LogicalPosition::new(in_view.x, in_view.y).to_physical(self.scale_factor());
+        self.queue_event(WindowEvent::CursorMoved { device_id: DEVICE_ID, position });
     }
 
     fn handle_scale_factor_changed(&self, scale_factor: CGFloat) {

@@ -1018,6 +1018,10 @@ pub struct App {
     /// the toolbox was last drawn with captions (sizes its buttons).
     pub toolbox_caption_w: f32,
     pub clipboard: Option<Clipboard>,
+    /// Files dropped where the windowing layer gave no place: whether
+    /// they go into the drawing or open in tabs of their own is asked
+    /// (#1142).
+    pub drop_question: Vec<PathBuf>,
     pub duplicate_offset: Vec2,
     /// The last Duplicate: each original and its copy. While the copies
     /// are the selection, the next Duplicate repeats what was done to
@@ -2426,6 +2430,7 @@ impl App {
             toolbox_last: crate::tools::GROUPS.iter().map(|g| g.tools[0]).collect(),
             toolbox_caption_w: 0.0,
             clipboard: None,
+            drop_question: Vec::new(),
             // Duplicate leaves the copy in place, ready to be moved,
             // scaled or turned; the next one repeats that (#1494).
             duplicate_offset: Vec2::ZERO,

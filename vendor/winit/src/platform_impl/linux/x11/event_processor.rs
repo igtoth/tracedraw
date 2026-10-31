@@ -515,6 +515,32 @@ impl EventProcessor {
             }
 
             self.dnd.source_window = Some(source_window);
+
+            // TraceDraw: where the pointer is over the window goes out as a
+            // cursor move, as a drag of files gives the window no motion
+            // events of its own, so that the drop can be told apart by where
+            // it lands (TraceDraw #1142). The place is in root window
+            // coordinates, `(x << 16) | y`.
+            let packed = xev.data.get_long(2);
+            let root_x = ((packed >> 16) & 0xffff) as u16 as i16;
+            let root_y = (packed & 0xffff) as u16 as i16;
+            let inside = wt
+                .xconn
+                .xcb_connection()
+                .translate_coordinates(wt.root, window, root_x, root_y)
+                .ok()
+                .and_then(|cookie| cookie.reply().ok());
+            if let Some(at) = inside {
+                let event = Event::WindowEvent {
+                    window_id,
+                    event: WindowEvent::CursorMoved {
+                        device_id: mkdid(util::VIRTUAL_CORE_POINTER),
+                        position: PhysicalPosition::new(at.dst_x as f64, at.dst_y as f64),
+                    },
+                };
+                callback(&self.target, event);
+            }
+
             if self.dnd.result.is_none() {
                 let time = if version >= 1 {
                     xev.data.get_long(3) as xproto::Timestamp

@@ -55,6 +55,12 @@ change marked `TraceDraw:` in a comment.
   screen (#787). TraceDraw's tests include and run it
   (`splash::eframe_window_start::tests`). Check whether egui 0.37 still
   needs it before dropping the copy.
+- Change: in the browser, `dragover` and `drop` (`web/events.rs`,
+  `install_drag_and_drop`) push a pointer move at the event's place
+  before the hovered or dropped files (#1142): the browser sends no mouse
+  moves while files are dragged over the page, so TraceDraw could not
+  tell a drop on the drawing (import) from one on the menus or tabs
+  (open in a tab of its own), and the hint always said "Drop to open".
 - Drop the copy and the `[patch.crates-io]` entry when the workspace moves
   to egui/eframe 0.37 or later: what holds that back is the egui 0.37
   API migration across the app. The fixed-function painter has no
@@ -113,9 +119,29 @@ change marked `TraceDraw:` in a comment.
   `objc2-foundation` for `NSURL` as well. `src/opened_files.rs` depends on
   nothing in the crate, and TraceDraw's tests include and run it
   (`winit_opened_files::tests`).
+- Change: the pointer's place while files are dragged over the window
+  (#1142). winit 0.30's file drag events (`HoveredFile`, `DroppedFile`)
+  carry no position, and the system drag sends the window no mouse
+  moves, so TraceDraw could not tell a drop on the drawing (import) from
+  one on the menus or tabs (open in a tab of its own). The copy sends a
+  `WindowEvent::CursorMoved` with the place, which egui-winit hands on as
+  a pointer move:
+  - X11 (`platform_impl/linux/x11/event_processor.rs`): each
+    `XdndPosition` message, its root window coordinates translated to
+    the window's (`TranslateCoordinates`), before the drop data is asked
+    for.
+  - macOS (`platform_impl/macos/window_delegate.rs`): `draggingEntered:`
+    and `performDragOperation:` first, and a new `draggingUpdated:`
+    (answering a copy, as `draggingEntered:` does), the dragging info's
+    `draggingLocation` converted to the flipped view's points
+    (`queue_drag_position`).
+  - Windows keeps reading the cursor itself (`drop_files::drop_pointer`).
 - The published crate's `examples/` and `tests/` stay as downloaded (the
   manifest lists them); they build in no gate.
 - Drop the copy and the `[patch.crates-io]` entry when a winit release
   carries pen pressure on X11 and macOS (rust-windowing/winit#99) and
   passes on the files macOS asks to open, and
   check that egui-winit still maps `Touch` forces the same way.
+  drag positions (winit 0.31's `DragEntered`/`DragMoved`/`DragDropped`
+  carry them: move `drop_files` onto those), and check that egui-winit
+  still maps `Touch` forces the same way.
