@@ -2,8 +2,11 @@
 
 File > Package and the Package choice of Save As put a drawing and what
 it needs into one folder, ready to hand to someone else or to keep with
-the job (#852). Desktop only: the browser version has no folders, so the
-menu item is greyed and Save As does not offer the choice.
+the job (#852). The browser version has no folders, so the menu item is
+greyed and Save As does not offer the choice. The Android app reaches no
+folder of its own choosing either: there File > Package hands the
+package over as one zip file where the system's picker says, and Save
+As greys the choice with the reason (#1401, "On Android" below).
 
 ## What goes in
 
@@ -43,6 +46,20 @@ copied beside it and its links are changed to the copies, one undo step
 each, before it is written, so the open drawing is the package's from
 then on. Fonts, the PDF and the report follow.
 
+## On Android
+
+The Package Drawing dialog asks for the File name and Include a PDF
+only, with the note that the package is one zip file. OK opens the
+system's save picker for `<name>.zip` (`application/zip`); when it
+answers, the package is made as above in a folder of the app's
+temporary folder (`App::package_zip`), zipped with that folder,
+`<name>/`, at its top (the drawing, `Pictures/`, `Fonts/`, the PDF and
+the report; deflated) and written to the document the picker made; the
+temporary folder is removed and the status line names the zip. A
+cancelled picker writes nothing. Save As's Package box is greyed, its
+tip saying to use File > Package: Save As writes one document where the
+picker says, and an open drawing cannot become a file inside a zip.
+
 ## Opening a package
 
 A `.tdraw` drawing opened from a folder that has a `Fonts` folder beside
@@ -63,7 +80,13 @@ fonts where they are not installed. Nothing is installed in the system.
   report names it
   (`package::tests::fonts_that_may_not_go_along_are_reported_not_copied`).
 - Given the Package Drawing dialog, Enter writes the package into the
-  folder chosen (`ui::package_dialog::tests`).
+  folder chosen; on Android only the name is checked
+  (`ui::package_dialog::tests`).
+- Given the drawing above packaged as a zip (Android), the zip holds
+  `<name>/` with the drawing, its pictures, the PDF and the report, the
+  drawing's links point to the pictures beside it, the temporary folder
+  is gone and the open drawing is unchanged
+  (`package::tests::a_package_goes_into_one_zip_file`).
 - Given Save As with Package ticked in the dialog, the drawing is saved
   in a folder of its name with its picture in `Pictures/`, the link is
   relative and reads back

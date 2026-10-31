@@ -47,6 +47,8 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 log.workspace = true
 env_logger.workspace = true
 flate2 = "1"
+# File > Package as one zip file where the system's picker says (Android, #1401).
+zip.workspace = true
 web-time = "1"
 # Local dates and times (Time Tracker), with the system time zone.
 jiff = "0.2"

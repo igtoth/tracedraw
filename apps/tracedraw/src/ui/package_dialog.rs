@@ -2,7 +2,10 @@
 //! folder (a folder named after the drawing, beside its file, to start
 //! with), the drawing's name in it and whether a PDF goes along; OK
 //! writes the package (`App::package_copy`) and the status line says what
-//! went in. See docs/behavior/package.md.
+//! went in. The Android app has no folder of its own choosing: there the
+//! dialog asks for the name and the PDF only, and OK hands the package
+//! over as one zip file where the system's picker says (#1401). See
+//! docs/behavior/package.md.
 
 use crate::app::App;
 use crate::i18n::{tr, trf};
@@ -30,6 +33,15 @@ impl PackageState {
     /// the last one used, else the home folder).
     pub fn new(app: &App) -> Self {
         let name = app.document_name();
+        if crate::files::ANDROID {
+            // The picker chooses the place.
+            return PackageState {
+                folder: String::new(),
+                name,
+                pdf: false,
+                note: None,
+            };
+        }
         let dir = app
             .file
             .as_ref()
@@ -48,14 +60,7 @@ impl PackageState {
 
     /// Why the package cannot be written (an i18n key).
     pub fn problem(&self) -> Option<&'static str> {
-        if self.folder.trim().is_empty() {
-            return Some("package.need_folder");
-        }
-        let name = self.stem();
-        if name.is_empty() || name.contains(['/', '\\']) {
-            return Some("dialog.need_file_name");
-        }
-        None
+        problem_of(self, crate::files::ANDROID)
     }
 
     /// The name without a `.tdraw` the user may have typed.
@@ -65,11 +70,22 @@ impl PackageState {
     }
 
     /// Write the package; true when it was written (the dialog closes).
+    /// On Android the system's picker asks where the zip goes, and the
+    /// package is written when it answers.
     pub fn run(&mut self, app: &mut App) -> bool {
         if let Some(p) = self.problem() {
             self.note = Some(tr(p));
             return false;
         }
+        if crate::files::ANDROID {
+            app.package_through_picker(self.stem(), self.pdf);
+            return true;
+        }
+        self.run_into_folder(app)
+    }
+
+    /// [`PackageState::run`] into the folder typed or chosen.
+    fn run_into_folder(&mut self, app: &mut App) -> bool {
         let folder = PathBuf::from(self.folder.trim());
         match app.package_copy(&folder, &self.stem(), self.pdf) {
             Ok(r) => {
@@ -87,6 +103,19 @@ impl PackageState {
     }
 }
 
+/// Why the package of `st` cannot be written (an i18n key): no folder
+/// (not asked for on Android, `android`) or no usable name.
+pub fn problem_of(st: &PackageState, android: bool) -> Option<&'static str> {
+    if !android && st.folder.trim().is_empty() {
+        return Some("package.need_folder");
+    }
+    let name = st.stem();
+    if name.is_empty() || name.contains(['/', '\\']) {
+        return Some("dialog.need_file_name");
+    }
+    None
+}
+
 pub fn dialog(app: &mut App, ctx: &Context, st: &mut PackageState, close: &mut bool) {
     let mut help = false;
     window(ctx, tr("package.title")).show(ctx, |ui| {
@@ -95,16 +124,20 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut PackageState, close: &mut b
             .num_columns(2)
             .spacing([8.0, 6.0])
             .show(ui, |ui| {
-                ui.label(tr("package.folder"));
-                ui.horizontal(|ui| {
-                    ui.add(egui::TextEdit::singleline(&mut st.folder).desired_width(330.0));
-                    if ui.button(tr("publish.browse")).clicked() {
-                        if let Some(dir) = crate::files::pick_folder() {
-                            st.folder = dir.join(st.stem()).display().to_string();
+                // On Android the system's picker chooses where the zip
+                // goes, after OK.
+                if !crate::files::ANDROID {
+                    ui.label(tr("package.folder"));
+                    ui.horizontal(|ui| {
+                        ui.add(egui::TextEdit::singleline(&mut st.folder).desired_width(330.0));
+                        if ui.button(tr("publish.browse")).clicked() {
+                            if let Some(dir) = crate::files::pick_folder() {
+                                st.folder = dir.join(st.stem()).display().to_string();
+                            }
                         }
-                    }
-                });
-                ui.end_row();
+                    });
+                    ui.end_row();
+                }
                 ui.label(tr("dialog.file_name"));
                 ui.horizontal(|ui| {
                     ui.add(egui::TextEdit::singleline(&mut st.name).desired_width(240.0));
@@ -116,6 +149,9 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut PackageState, close: &mut b
         ui.checkbox(&mut st.pdf, tr("package.pdf"));
         ui.add_space(4.0);
         ui.label(RichText::new(tr("package.note")).weak());
+        if crate::files::ANDROID {
+            ui.label(RichText::new(tr("package.android_zip")).weak());
+        }
         let note = st.note.clone().unwrap_or_else(|| " ".into());
         ui.label(RichText::new(note).color(ERROR));
         let (ok, h) = crate::ui::dialogs::help_ok_cancel(ui, close);
@@ -133,6 +169,24 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut PackageState, close: &mut b
 mod tests {
     use super::*;
     use egui::{vec2, Pos2, Rect};
+
+    /// On Android (#1401) the dialog asks for no folder: the system's
+    /// picker says where the zip goes, so only the name is checked.
+    #[test]
+    fn android_asks_for_the_name_only() {
+        let mut st = PackageState {
+            folder: String::new(),
+            name: "Flyer".into(),
+            pdf: true,
+            note: None,
+        };
+        assert_eq!(problem_of(&st, false), Some("package.need_folder"));
+        assert_eq!(problem_of(&st, true), None);
+        st.name = "a/b".into();
+        assert_eq!(problem_of(&st, true), Some("dialog.need_file_name"));
+        assert!(crate::i18n::has_english("package.android_zip"));
+        assert!(crate::i18n::has_english("dialog.save_package_android"));
+    }
 
     /// The dialog starts at a folder named after the drawing, checks the
     /// name, draws, and OK (Enter) writes the package and closes.
