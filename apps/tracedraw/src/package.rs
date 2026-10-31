@@ -6,8 +6,10 @@
 //! can move); fonts go into `Fonts/` when their licence allows them to go
 //! with a document (the OS/2 embedding bits), the others are listed in the
 //! report. A drawing opened from a folder with a `Fonts` folder beside it
-//! gets those fonts for the session. Desktop only: a browser has no
-//! folders. See docs/behavior/package.md.
+//! gets those fonts for the session. A browser has no folders; the
+//! Android app, which reaches no folder of its own choosing, hands the
+//! package over as one zip file where the system's picker says
+//! ([`App::package_zip`], #1401). See docs/behavior/package.md.
 
 use crate::app::App;
 use crate::i18n::{tr, trf};
@@ -490,12 +492,51 @@ fn finish(
     Ok(r)
 }
 
+/// The files under `folder` (its subfolders too) as one zip file, each
+/// under `top/` and its path in the folder with `/` between the parts, in
+/// name order.
+pub fn zip_folder(folder: &Path, top: &str) -> Result<Vec<u8>, String> {
+    fn walk(dir: &Path, prefix: &str, out: &mut Vec<(String, PathBuf)>) -> std::io::Result<()> {
+        let mut entries: Vec<_> = std::fs::read_dir(dir)?.flatten().collect();
+        entries.sort_by_key(|e| e.file_name());
+        for e in entries {
+            let name = format!("{prefix}/{}", e.file_name().to_string_lossy());
+            let path = e.path();
+            if path.is_dir() {
+                walk(&path, &name, out)?;
+            } else {
+                out.push((name, path));
+            }
+        }
+        Ok(())
+    }
+    use std::io::Write as _;
+    let mut files = Vec::new();
+    walk(folder, top, &mut files).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    for (name, path) in files {
+        let data = std::fs::read(&path).map_err(|e| e.to_string())?;
+        zip.start_file(name, options).map_err(|e| e.to_string())?;
+        zip.write_all(&data).map_err(|e| e.to_string())?;
+    }
+    zip.finish()
+        .map(|c| c.into_inner())
+        .map_err(|e| e.to_string())
+}
+
 /// The status line after packaging.
 pub fn status(r: &Report) -> String {
+    status_in(r, &r.folder.display().to_string())
+}
+
+/// [`status`] for a package that went to `place` (a zip file's name).
+pub fn status_in(r: &Report, place: &str) -> String {
     let mut msg = trf(
         "status.packaged",
         &[
-            ("p", &r.folder.display().to_string()),
+            ("p", place),
             ("pictures", &r.pictures.len().to_string()),
             ("fonts", &r.fonts.len().to_string()),
         ],
@@ -537,6 +578,49 @@ impl App {
         })
         .map_err(|e| e.to_string())?;
         finish(self, &doc, &drawing, pictures, pdf)
+    }
+
+    /// File > Package as one zip file (the Android app, #1401): the
+    /// package made as [`App::package_copy`] makes it, in a folder of the
+    /// app's temporary folder, then zipped with that folder (`name`) at
+    /// its top and the folder removed. The zip's bytes and the report.
+    pub fn package_zip(&self, name: &str, pdf: bool) -> Result<(Vec<u8>, Report), String> {
+        static WORK: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        if crate::files::WEB {
+            return Err(tr("package.desktop_only"));
+        }
+        let n = WORK.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let work =
+            std::env::temp_dir().join(format!("tracedraw-package-{}-{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&work);
+        let folder = work.join(name);
+        let made = self
+            .package_copy(&folder, name, pdf)
+            .and_then(|r| zip_folder(&folder, name).map(|zip| (zip, r)));
+        let _ = std::fs::remove_dir_all(&work);
+        made
+    }
+
+    /// File > Package on Android: the system's picker asks where the zip
+    /// of the package goes (`name.zip`), which is written when it answers.
+    pub fn package_through_picker(&mut self, name: String, pdf: bool) {
+        crate::files::Dialog::new()
+            .add_filter("ZIP", &["zip"])
+            .set_file_name(format!("{name}.zip"))
+            .save_file(self, move |app, path| {
+                let place = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| format!("{name}.zip"));
+                app.status = match app.package_zip(&name, pdf).and_then(|(zip, r)| {
+                    crate::files::write(&path, zip)
+                        .map(|()| r)
+                        .map_err(|e| e.to_string())
+                }) {
+                    Ok(r) => status_in(&r, &place),
+                    Err(e) => trf("status.package_failed", &[("e", &e)]),
+                };
+            });
     }
 
     /// Save As with Package: the drawing saved as `path` in its package
@@ -746,6 +830,46 @@ mod tests {
         assert_eq!(r2.pictures.len(), 2);
         assert!(tracedraw_text::fonts().installed_paths().contains(&font));
         assert!(folder.join("Pictures/logo.png").is_file());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The Android app's package (#1401): the same package as one zip
+    /// file, the folder named after the drawing at its top, with the
+    /// drawing, its pictures, its fonts, the PDF and the report; the
+    /// temporary folder it was made in is gone and the open drawing is
+    /// not changed.
+    #[test]
+    fn a_package_goes_into_one_zip_file() {
+        let dir = temp("zip");
+        let (app, _) = drawing(&dir);
+        let before = links(app.doc());
+        let (zip, r) = app.package_zip("Poster", true).expect("zipped");
+        assert_eq!(links(app.doc()), before);
+        assert!(!r.folder.exists(), "the work folder is removed");
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(zip)).expect("a zip");
+        let names: Vec<String> = archive.file_names().map(str::to_string).collect();
+        for needed in [
+            "Poster/Poster.tdraw",
+            "Poster/Poster.pdf",
+            "Poster/Pictures/logo.png",
+            "Poster/Pictures/logo-2.png",
+        ] {
+            assert!(names.iter().any(|n| n == needed), "{needed} in {names:?}");
+        }
+        let report = r.report.file_name().expect("report").to_string_lossy();
+        assert!(names.contains(&format!("Poster/{report}")), "{names:?}");
+        assert!(names.iter().all(|n| n.starts_with("Poster/")));
+        // The drawing in the zip links to the pictures beside it.
+        let mut text = String::new();
+        std::io::Read::read_to_string(
+            &mut archive.by_name("Poster/Poster.tdraw").expect("drawing"),
+            &mut text,
+        )
+        .expect("read");
+        let copy = Document::from_json(&text).expect("reads");
+        assert!(links(&copy).iter().any(|l| l == "Pictures/logo.png"));
+        // The status names the zip.
+        assert!(status_in(&r, "Poster.zip").contains("Poster.zip"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

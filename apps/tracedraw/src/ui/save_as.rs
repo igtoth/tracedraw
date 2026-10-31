@@ -233,8 +233,11 @@ impl SaveAsState {
     }
 
     /// Saved as a package: asked for, a `.tdraw` file, on the desktop.
+    /// The Android app makes packages as zip files with File > Package
+    /// only (#1401): its Save As writes one document where the picker
+    /// says.
     pub fn packaged(&self) -> bool {
-        self.package && !self.cdr && !files::WEB
+        self.package && !self.cdr && !files::WEB && !files::ANDROID
     }
 
     /// Show `dir` (a folder that cannot be read shows empty).
@@ -1147,11 +1150,20 @@ fn fields(ui: &mut Ui, st: &mut SaveAsState) {
             ui.end_row();
             // Package (#852): a folder of the drawing's name with its
             // pictures and fonts; folders are a desktop thing.
+            // On Android it is greyed with the reason: a package there
+            // is one zip file, made by File > Package (#1401).
             if !files::WEB {
                 ui.label("");
                 ui.horizontal(|ui| {
-                    ui.checkbox(&mut st.package, tr("dialog.save_package"))
-                        .rich_tip(tr("dialog.save_package_tip"));
+                    if files::ANDROID {
+                        st.package = false;
+                    }
+                    ui.add_enabled(
+                        !files::ANDROID,
+                        egui::Checkbox::new(&mut st.package, tr("dialog.save_package")),
+                    )
+                    .rich_tip(tr("dialog.save_package_tip"))
+                    .rich_disabled_tip(tr("dialog.save_package_android"));
                     ui.add_enabled_ui(st.package, |ui| {
                         ui.checkbox(&mut st.package_pdf, tr("package.pdf"));
                     });
