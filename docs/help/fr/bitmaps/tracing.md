@@ -8,8 +8,9 @@ numérisé, un croquis, une photo.
 
 Sélectionnez un bitmap et choisissez
 [[menu.bitmaps > menu.bitmaps.quick_trace]]. Elle utilise le préréglage
-choisi sur la page [[options.bitmap_tracing]] des options globales (Clipart
-au départ).
+choisi sur la page [[options.bitmap_tracing]] des options globales
+([[menu.bitmaps.trace_optimized]] au départ, qui choisit le détail pour
+chaque image : aussi fidèle que possible avec le moins de nœuds).
 
 [[menu.bitmaps.repeat_last_trace]] vectorise à nouveau le bitmap sélectionné comme la dernière vectorisation, sans boîte de dialogue, et [[menu.bitmaps.last_trace_settings]] ouvre la boîte de dialogue avec ses paramètres. Le menu contextuel d'un bitmap contient aussi ces commandes, avec [[menu.bitmaps.centerline_trace]] et [[menu.bitmaps.outline_trace]].
 
@@ -22,7 +23,8 @@ un pour ouvrir la boîte de dialogue.
 - **Vectorisation par contour** remplit les zones de couleur avec des
   formes : [[menu.bitmaps.trace_line_art]], [[menu.bitmaps.trace_logo]],
   [[menu.bitmaps.trace_detailed_logo]], [[menu.bitmaps.trace_clipart]],
-  [[menu.bitmaps.trace_low_quality]] et [[menu.bitmaps.trace_high_quality]].
+  [[menu.bitmaps.trace_low_quality]], [[menu.bitmaps.trace_high_quality]] et
+  [[menu.bitmaps.trace_optimized]].
 - **Vectorisation par axe** suit les lignes avec des courbes ouvertes :
   [[menu.bitmaps.trace_technical]] et [[menu.bitmaps.trace_line_drawing]].
 
@@ -34,7 +36,8 @@ un panneau à droite, et la vectorisation est refaite à chaque changement de
 paramètre : rien à presser pour voir le résultat. Sous l'aperçu, une ligne
 compte les **courbes**, les **nœuds** et les **couleurs** du résultat.
 Cliquez sur [[dialog.ok]] pour placer les formes sur le bitmap, les plus
-sombres d'abord, ou sur [[dialog.cancel]] pour laisser le bitmap tel quel.
+sombres d'abord, ou sur [[dialog.cancel]] pour laisser le bitmap tel quel ;
+les deux se trouvent en bas à droite de la boîte de dialogue.
 
 ## L'aperçu {#preview}
 
@@ -56,6 +59,11 @@ agrandissent et déplacent la vue. La molette zoome autour du pointeur et un
 glissement déplace l'image ; les deux volets bougent ensemble. Les parties
 transparentes montrent un damier.
 
+Dans le navigateur, une grande image est prévisualisée à partir d'une copie
+plus petite, et une note en rouge sous l'aperçu le signale : les détails
+fins peuvent y paraître grossiers, mais [[dialog.ok]] vectorise l'image
+entière. L'application de bureau montre l'aperçu exactement.
+
 ## Paramètres {#settings}
 
 L'onglet [[dialog.trace_tab_settings]] contient :
@@ -65,6 +73,8 @@ L'onglet [[dialog.trace_tab_settings]] contient :
   conviennent à ce type d'image.
 - [[dialog.detail]] (0 à 100) : plus de détail garde les zones plus petites
   et les lignes plus fines ; moins de détail lisse les taches et le grain.
+  Avec [[menu.bitmaps.trace_optimized]], le détail est choisi pour chaque
+  image et le curseur est grisé.
 - [[dialog.smoothing]] (0 à 100, 25 au départ) : des courbes plus lisses
   avec moins de nœuds.
 - [[dialog.corner_smoothness]] (0 à 100) : des angles plus arrondis.
@@ -88,6 +98,13 @@ L'onglet [[dialog.trace_tab_settings]] contient :
 
 Les paramètres qui ne s'appliquent pas au type de vectorisation en cours
 sont grisés : une vectorisation par axe ne lit que le détail et le lissage.
+
+[[dialog.trace_optimize]], en bas à gauche de la boîte de dialogue, essaie
+plusieurs niveaux de détail sur l'image, compare chaque résultat avec elle,
+et place dans le curseur [[dialog.detail]] le détail qui la dessine le plus
+fidèlement avec le moins de nœuds. C'est une étape que vous pouvez annuler.
+Si vous changez les paramètres avant qu'elle soit terminée, son résultat est
+abandonné.
 
 ## Couleurs {#colors}
 

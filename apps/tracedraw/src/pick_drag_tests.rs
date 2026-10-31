@@ -13693,6 +13693,114 @@ fn merge_adjacent_and_group_by_color_change_the_result() {
         .all(|c| matches!(c.kind, ShapeKind::Path { closed: true, .. })));
 }
 
+/// OK and Cancel sit in the Trace dialog's bottom right corner, under the
+/// settings column, whatever its width (they followed Options... at the
+/// left). Best optimization looks for the detail that traces the picture
+/// best, off the interface thread, and puts it in the Detail slider as a
+/// step the arrows undo.
+#[test]
+fn trace_ok_is_at_the_right_and_best_optimization_sets_the_detail() {
+    let (ctx, mut app, _) = trace_setup(black_white_image(200, |x, y| {
+        ((x as f32 - 100.0).powi(2) + (y as f32 - 100.0).powi(2)).sqrt() < 60.0
+            || (20..40).contains(&x) && (150..190).contains(&y)
+    }));
+    trace_wait(&ctx, &mut app);
+    let ok = trace_text_at(&ctx, &mut app, &crate::i18n::tr("dialog.ok")).expect("OK");
+    let cancel = trace_text_at(&ctx, &mut app, &crate::i18n::tr("dialog.cancel")).expect("Cancel");
+    let optimize = trace_rect(&ctx, "optimize");
+    let detail = trace_rect(&ctx, "detail");
+    assert!(
+        ok.x > detail.left() && cancel.x > ok.x,
+        "OK {ok:?}, Cancel {cancel:?}, settings from {}",
+        detail.left()
+    );
+    assert!(ok.x > optimize.right());
+    let before = trace_state(&app).settings.clone();
+    click_at(&ctx, &mut app, optimize.center(), Modifiers::NONE);
+    let t0 = std::time::Instant::now();
+    while app.trace_live.optimizing() {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        assert!(
+            t0.elapsed() < std::time::Duration::from_secs(60),
+            "never found"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(3));
+    }
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let st = trace_state(&app);
+    assert!(!st.settings.optimize);
+    assert!(
+        [50.0, 60.0, 70.0, 80.0, 85.0].contains(&st.settings.detail),
+        "{}",
+        st.settings.detail
+    );
+    if st.settings.detail != before.detail {
+        assert!(st.can_undo(), "a step of its own");
+    }
+}
+
+/// A Best optimization found after the settings changed is not put in:
+/// the detail set by hand meanwhile stays.
+#[test]
+fn a_stale_best_optimization_is_dropped() {
+    let (ctx, mut app, _) = trace_setup(image::RgbaImage::from_fn(1200, 1200, |x, y| {
+        let d = ((x as f32 - 600.0).powi(2) + (y as f32 - 600.0).powi(2)).sqrt();
+        let v = if d < 400.0 && (x / 7 + y / 9) % 3 == 0 {
+            0
+        } else {
+            255
+        };
+        image::Rgba([v, v, v, 255])
+    }));
+    click_at(
+        &ctx,
+        &mut app,
+        trace_rect(&ctx, "optimize").center(),
+        Modifiers::NONE,
+    );
+    assert!(app.trace_live.optimizing());
+    if let crate::ui::dialogs::Dialog::Trace(st) = &mut app.dialog {
+        st.settings.detail = 33.0;
+    }
+    let t0 = std::time::Instant::now();
+    while app.trace_live.optimizing() {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        assert!(
+            t0.elapsed() < std::time::Duration::from_secs(60),
+            "never found"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(3));
+    }
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(trace_state(&app).settings.detail, 33.0);
+}
+
+/// The Optimized image type chooses the detail for each picture: the
+/// Detail slider is greyed (a click on it changes nothing) and the trace
+/// is made with the detail found.
+#[test]
+fn the_optimized_image_type_greys_the_detail() {
+    let (ctx, mut app, _) = trace_setup(black_white_image(160, |x, y| {
+        x > 40 && y > 40 && x < 120 && y < 120
+    }));
+    app.open_trace(crate::trace::Preset::Optimized);
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    assert!(trace_state(&app).settings.optimize);
+    let shown = trace_wait(&ctx, &mut app);
+    assert_eq!(shown.stats.curves, 1);
+    let detail = trace_rect(&ctx, "detail");
+    let before = trace_state(&app).settings.detail;
+    click_at(
+        &ctx,
+        &mut app,
+        egui::pos2(detail.left() + detail.width() * 0.1, detail.center().y),
+        Modifiers::NONE,
+    );
+    assert_eq!(trace_state(&app).settings.detail, before, "greyed");
+}
+
 /// Reset takes the settings back to the image type's; the arrows undo
 /// and redo the steps, Reset included.
 #[test]

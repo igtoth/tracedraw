@@ -8,7 +8,9 @@ esboço, uma foto.
 
 Selecione um bitmap e escolha [[menu.bitmaps > menu.bitmaps.quick_trace]].
 Ela usa a predefinição escolhida na página [[options.bitmap_tracing]] das
-opções globais (Clipart no início).
+opções globais ([[menu.bitmaps.trace_optimized]] no início, que escolhe o
+detalhe para cada imagem: o mais fiel a ela possível com o menor número de
+nós).
 
 [[menu.bitmaps.repeat_last_trace]] vetoriza o bitmap selecionado de novo como a última vetorização, sem caixa de diálogo, e [[menu.bitmaps.last_trace_settings]] abre a caixa de diálogo com as configurações dela. O menu de contexto de um bitmap também tem esses comandos, junto com [[menu.bitmaps.centerline_trace]] e [[menu.bitmaps.outline_trace]].
 
@@ -21,7 +23,8 @@ abrir a caixa de diálogo.
 - **Vetorização de contorno** preenche áreas de cor com formas:
   [[menu.bitmaps.trace_line_art]], [[menu.bitmaps.trace_logo]],
   [[menu.bitmaps.trace_detailed_logo]], [[menu.bitmaps.trace_clipart]],
-  [[menu.bitmaps.trace_low_quality]] e [[menu.bitmaps.trace_high_quality]].
+  [[menu.bitmaps.trace_low_quality]], [[menu.bitmaps.trace_high_quality]] e
+  [[menu.bitmaps.trace_optimized]].
 - **Vetorização de linha central** segue as linhas com curvas abertas:
   [[menu.bitmaps.trace_technical]] e [[menu.bitmaps.trace_line_drawing]].
 
@@ -33,7 +36,8 @@ direita, e a vetorização é refeita sempre que você muda uma configuração:
 não há nada a apertar para ver o resultado. Abaixo da visualização, uma
 linha conta as **curvas**, os **nós** e as **cores** do resultado. Clique
 em [[dialog.ok]] para colocar as formas sobre o bitmap, as mais escuras
-primeiro, ou em [[dialog.cancel]] para deixar o bitmap como está.
+primeiro, ou em [[dialog.cancel]] para deixar o bitmap como está; os dois
+ficam no canto inferior direito da caixa de diálogo.
 
 ## A visualização {#preview}
 
@@ -54,6 +58,11 @@ deslocam. A roda do mouse amplia ao redor do ponteiro e um arrasto move a
 imagem; os dois painéis se movem juntos. As partes transparentes mostram um
 tabuleiro de xadrez.
 
+No navegador, uma imagem grande é visualizada a partir de uma cópia menor,
+e uma nota em vermelho abaixo da visualização avisa isso: os detalhes finos
+podem parecer grosseiros ali, mas [[dialog.ok]] vetoriza a imagem inteira.
+A versão para desktop mostra a visualização com exatidão.
+
 ## Configurações {#settings}
 
 A guia [[dialog.trace_tab_settings]] contém:
@@ -62,7 +71,9 @@ A guia [[dialog.trace_tab_settings]] contém:
   [[dialog.trace_image_type]] a predefinição. Escolher uma coloca os
   controles abaixo nos valores que convêm a esse tipo de imagem.
 - [[dialog.detail]] (0 a 100): mais detalhe mantém áreas menores e linhas
-  mais finas; menos detalhe suaviza manchas e granulação.
+  mais finas; menos detalhe suaviza manchas e granulação. Com
+  [[menu.bitmaps.trace_optimized]], o detalhe é escolhido para cada imagem e
+  o controle fica acinzentado.
 - [[dialog.smoothing]] (0 a 100, 25 no início): curvas mais suaves com
   menos nós.
 - [[dialog.corner_smoothness]] (0 a 100): cantos mais arredondados.
@@ -85,6 +96,12 @@ A guia [[dialog.trace_tab_settings]] contém:
 As configurações que não se aplicam ao tipo de vetorização atual ficam
 acinzentadas: uma vetorização de linha central lê só o detalhe e a
 suavização.
+
+[[dialog.trace_optimize]], no canto inferior esquerdo da caixa de diálogo,
+testa vários níveis de detalhe na imagem, compara cada vetorização com ela
+e coloca no controle [[dialog.detail]] o detalhe que a desenha com mais
+fidelidade usando menos nós. É um passo que você pode desfazer. Se você
+mudar as configurações antes que ele termine, o resultado dele é descartado.
 
 ## Cores {#colors}
 

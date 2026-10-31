@@ -7,7 +7,9 @@ kunt bewerken, herkleuren en schalen: een gescand logo, een schets, een foto.
 
 Selecteer een bitmap en kies [[menu.bitmaps > menu.bitmaps.quick_trace]].
 Het gebruikt de voorinstelling die op de pagina [[options.bitmap_tracing]]
-van de algemene opties is gekozen (aanvankelijk Clipart).
+van de algemene opties is gekozen (aanvankelijk
+[[menu.bitmaps.trace_optimized]], dat het detail per afbeelding kiest: zo
+getrouw mogelijk met zo min mogelijk knooppunten).
 
 [[menu.bitmaps.repeat_last_trace]] trekt de geselecteerde bitmap opnieuw over zoals de laatste keer, zonder dialoogvenster, en [[menu.bitmaps.last_trace_settings]] opent het dialoogvenster met die instellingen. Het contextmenu van een bitmap heeft deze opdrachten ook, samen met [[menu.bitmaps.centerline_trace]] en [[menu.bitmaps.outline_trace]].
 
@@ -20,7 +22,8 @@ dialoogvenster te openen.
 - **Omtrek overtrekken** vult kleurvlakken met vormen:
   [[menu.bitmaps.trace_line_art]], [[menu.bitmaps.trace_logo]],
   [[menu.bitmaps.trace_detailed_logo]], [[menu.bitmaps.trace_clipart]],
-  [[menu.bitmaps.trace_low_quality]] en [[menu.bitmaps.trace_high_quality]].
+  [[menu.bitmaps.trace_low_quality]], [[menu.bitmaps.trace_high_quality]] en
+  [[menu.bitmaps.trace_optimized]].
 - **Middellijn overtrekken** volgt lijnen met open curven:
   [[menu.bitmaps.trace_technical]] en [[menu.bitmaps.trace_line_drawing]].
 
@@ -33,7 +36,7 @@ wijzigt: u hoeft niets in te drukken om het te zien. Onder de voorvertoning
 telt een regel de **curven**, **knooppunten** en **kleuren** van het
 resultaat. Klik op [[dialog.ok]] om de vormen over de bitmap te plaatsen,
 de donkerste eerst, of op [[dialog.cancel]] om de bitmap te laten zoals ze
-is.
+is; beide staan rechtsonder in het dialoogvenster.
 
 ## De voorvertoning {#preview}
 
@@ -55,6 +58,11 @@ zoomen in en verschuiven. Het muiswiel zoomt rond de aanwijzer en slepen
 verschuift de afbeelding; beide vakken bewegen samen. Transparante delen
 tonen een schaakbord.
 
+In de browser wordt een grote afbeelding voorvertoond vanuit een kleinere
+kopie, en een rode opmerking onder de voorvertoning meldt dat: fijn detail
+kan er grover uitzien, maar [[dialog.ok]] trekt de hele afbeelding over. De
+desktopapp toont de voorvertoning precies.
+
 ## Instellingen {#settings}
 
 Het tabblad [[dialog.trace_tab_settings]] bevat:
@@ -63,7 +71,9 @@ Het tabblad [[dialog.trace_tab_settings]] bevat:
   de voorinstelling. Een keuze zet de schuifregelaars eronder op de waarden
   die bij dat soort afbeelding passen.
 - [[dialog.detail]] (0 tot 100): meer detail behoudt kleinere vlakken en
-  fijnere lijnen; minder detail werkt vlekjes en korrel weg.
+  fijnere lijnen; minder detail werkt vlekjes en korrel weg. Met
+  [[menu.bitmaps.trace_optimized]] wordt het detail per afbeelding gekozen
+  en is de schuifregelaar grijs.
 - [[dialog.smoothing]] (0 tot 100, aanvankelijk 25): vloeiendere curven
   met minder knooppunten.
 - [[dialog.corner_smoothness]] (0 tot 100): rondere hoeken.
@@ -87,6 +97,13 @@ Het tabblad [[dialog.trace_tab_settings]] bevat:
 
 Instellingen die niet gelden voor het huidige type blijven grijs: een
 middellijn-overtrekking leest alleen het detail en de vloeiendheid.
+
+[[dialog.trace_optimize]], linksonder in het dialoogvenster, probeert
+meerdere detailniveaus op de afbeelding, vergelijkt elk resultaat ermee, en
+zet het detail dat haar het getrouwst tekent met de minste knooppunten in de
+schuifregelaar [[dialog.detail]]. Het is een stap die u ongedaan kunt maken.
+Als u de instellingen wijzigt voordat het klaar is, blijft het resultaat
+ervan weg.
 
 ## Kleuren {#colors}
 
