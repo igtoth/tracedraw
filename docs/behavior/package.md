@@ -3,7 +3,9 @@
 File > Package and the Package choice of Save As put a drawing and what
 it needs into one folder, ready to hand to someone else or to keep with
 the job (#852). The browser version has no folders, so the menu item is
-greyed and Save As does not offer the choice. The Android app reaches no
+greyed, with a tip that says it needs the desktop version (#1416,
+`package::tests::package_says_why_it_is_greyed_in_the_browser`), and
+Save As does not offer the choice. The Android app reaches no
 folder of its own choosing either: there File > Package hands the
 package over as one zip file where the system's picker says, and Save
 As greys the choice with the reason (#1401, "On Android" below).

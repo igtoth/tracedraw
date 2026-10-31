@@ -3986,8 +3986,22 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                             ));
                     }
                     if st.format == 6 {
-                        ui.checkbox(&mut st.webp_lossless, tr("dialog.webp_lossless"))
-                            .rich_tip(crate::ui::tips::keyed("dialog.webp_lossless"));
+                        match crate::export::why_webp_lossless_only(crate::export::LOSSY_WEBP) {
+                            None => {
+                                ui.checkbox(&mut st.webp_lossless, tr("dialog.webp_lossless"))
+                                    .rich_tip(crate::ui::tips::keyed("dialog.webp_lossless"));
+                            }
+                            // No lossy encoder here (the browser): ticked,
+                            // greyed and saying why (#592).
+                            Some(why) => {
+                                let mut on = true;
+                                ui.add_enabled(
+                                    false,
+                                    egui::Checkbox::new(&mut on, tr("dialog.webp_lossless")),
+                                )
+                                .rich_disabled_tip(tr(why));
+                            }
+                        }
                     }
                     if st.format == 3 || st.format == 6 {
                         ui.add(
