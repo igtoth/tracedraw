@@ -2763,8 +2763,10 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
     ) {
         app.reduce_selected_nodes();
     }
-    // Curve smoothness: dragging removes nodes from the curves as they
-    // were when the drag began, in one undo step.
+    // Curve smoothness: removes nodes from the curves as they were at
+    // its first change, in one undo step; it keeps its value until
+    // something else changes (#1326).
+    app.forget_smoothing_if_stale();
     let mut v = app.curve_smoothness;
     let r = ui
         .add_enabled(
@@ -2775,17 +2777,7 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
         )
         .rich_tip(tr("toolbar.curve_smoothness"));
     if r.changed() {
-        let first = app.smoothing.is_none();
-        if first {
-            app.smoothing = Some(app.smoothing_curves());
-        }
-        app.curve_smoothness = v;
-        let start = app.smoothing.clone().unwrap_or_default();
-        app.smooth_curves(&start, v, !first);
-    } else if !r.dragged() && app.smoothing.is_some() {
-        // Let go: the next change starts a new step from the new curves.
-        app.smoothing = None;
-        app.curve_smoothness = 0.0;
+        app.set_curve_smoothness(v);
     }
     if !has_curve && !app.selection.is_empty() {
         sep(ui);

@@ -90,7 +90,9 @@ are off at first, so they do not get in the way of editing nodes; turn on
 ## The property bar {#property-bar}
 
 - **Selection mode**: rectangular or freehand marquee.
-- **Add node** and **Delete node**.
+- **Add node** and **Delete node**. Add node puts a node in the middle of
+  each segment ending at a selected node and keeps the nodes selected with
+  the new ones, so pressing it again doubles the nodes again.
 - **Join nodes** joins two end nodes into one; **Break curve** splits the
   curve at the selected node.
 - **Convert to line** and **Convert to curve** make the segment ending at
@@ -112,7 +114,9 @@ are off at first, so they do not get in the way of editing nodes; turn on
 - **Select all nodes**.
 - **Reduce nodes** removes nodes that are not needed, from the selected
   nodes or from the whole curve. Drag the **curve smoothness** slider to
-  remove more nodes gradually.
+  remove more nodes gradually, or type a value into it; it keeps its value
+  until you do something else, and works from the curve as it was when you
+  first moved it.
 
 ## Aligning nodes {#align-nodes}
 
