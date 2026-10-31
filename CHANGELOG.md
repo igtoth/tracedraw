@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Options > Tools: the pages come in a new order (Pick, Eraser, Zoom/Pan, Freehand/Bézier, Shape Recognition, Rectangle, Ellipse, Polygon, Graph Paper, Spiral, Table, Dimension, Connector, Mesh Fill); Curve tools is now Freehand/Bézier, and new Shape Recognition (recognition and smoothing levels), Dimension (precision, units, prefix and suffix of new dimensions), Connector (corner radius) and Mesh Fill (columns and rows) pages edit the same defaults as the property bars, kept across restarts and put back by Cancel.
+
 ## 0.30.0 (2026-10-31)
 
 - Saving .cdr in version 8: the style table no longer holds the table that only the bidirectional variant of version 8 and later versions have, so the file has the layout of the files version 8 itself saved. The version 8 file of the last test bundle crashed a 2010 release of the program that reads `.cdr` files on opening, while the same drawing's files of versions 7 and 9 to 15 opened (#1139; not yet confirmed in that program).
@@ -24,7 +26,6 @@ full, row-by-row status.
 - Typing in older Tamil fonts that set the letters at the places of Latin ones (such as SR-Tamil fonts): Autocorrect no longer turns the first letter of a sentence into a capital or a quote into a curly one, each of which is another letter in such a font; the characters at code page places 0x80 to 0x9F type, show in the Glyphs docker and draw; and a letter one character map of the font lacks is drawn from the other instead of as an empty box (#1358, #1271).
 - Input methods: their candidate window opens beside the caret instead of at the corner of the drawing, and on Windows the letters that Tamil and other Indian input methods change while typing fast no longer delete the letter before them (#1271).
 - Properties docker, Transparency: the amount is a full-width slider with its label above, like the Fill section's angle and edge pad, and a fountain transparency's angle is the same angle slider. The property bar keeps its compact controls.
-- Options > Tools: the pages come in a new order (Pick, Eraser, Zoom/Pan, Freehand/Bézier, Shape Recognition, Rectangle, Ellipse, Polygon, Graph Paper, Spiral, Table, Dimension, Connector, Mesh Fill); Curve tools is now Freehand/Bézier, and new Shape Recognition (recognition and smoothing levels), Dimension (precision, units, prefix and suffix of new dimensions), Connector (corner radius) and Mesh Fill (columns and rows) pages edit the same defaults as the property bars, kept across restarts and put back by Cancel.
 - Options > Tools: each page in the list shows its tool's icon. The Zoom/Pan page has a Zoom tool section and a Calibrate Zoom... button that opens the ruler calibration (Display page).
 - Saving `.cdr`: the objects of master layers are kept. Each page a master layer shows on gets them on a layer of the same name, behind or in front of the page's own objects as drawn; they were left out of the file. The Objects docker says "In front" after a master layer drawn over the page's layers (#1132).
 - Colour palette: a right click whose pointer slipped a few pixels on a colour sets the outline; it applied the fill. Only a drag with the left button carries a colour away to drop it (#1336).
