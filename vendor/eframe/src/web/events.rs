@@ -958,6 +958,12 @@ fn handle_gesture(event: web_sys::Event, runner: &mut AppRunner) {
 fn install_drag_and_drop(runner_ref: &WebRunner, target: &EventTarget) -> Result<(), JsValue> {
     runner_ref.add_event_listener(target, "dragover", |event: web_sys::DragEvent, runner| {
         if let Some(data_transfer) = event.data_transfer() {
+            // TraceDraw: where files are dragged goes in as a pointer move,
+            // so that a drop can be told apart by where it lands
+            // (TraceDraw #1142); the browser sends no mouse moves during the
+            // drag.
+            let pos = pos_from_mouse_event(runner.canvas(), &event, runner.egui_ctx());
+            runner.input.raw.events.push(egui::Event::PointerMoved(pos));
             runner.input.raw.hovered_files.clear();
 
             // NOTE: data_transfer.files() is always empty in dragover
@@ -996,6 +1002,9 @@ fn install_drag_and_drop(runner_ref: &WebRunner, target: &EventTarget) -> Result
 
     runner_ref.add_event_listener(target, "drop", |event: web_sys::DragEvent, runner| {
         if let Some(data_transfer) = event.data_transfer() {
+            // TraceDraw: where the files were let go, before them (#1142).
+            let pos = pos_from_mouse_event(runner.canvas(), &event, runner.egui_ctx());
+            runner.input.raw.events.push(egui::Event::PointerMoved(pos));
             // TODO(https://github.com/emilk/egui/issues/3702): support dropping folders
             runner.input.raw.hovered_files.clear();
             runner.needs_repaint.repaint_asap();
