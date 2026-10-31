@@ -1452,9 +1452,8 @@ pub struct App {
     /// Objects docker: layers shown closed, groups shown open.
     pub objects_collapsed: std::collections::HashSet<tracedraw_core::LayerId>,
     pub objects_open_groups: std::collections::HashSet<ShapeId>,
-    /// Objects docker: the page and the Master Page nodes are shown
-    /// closed.
-    pub objects_page_closed: bool,
+    /// Objects docker: the pages and the Master Page nodes shown closed.
+    pub objects_closed_pages: std::collections::HashSet<tracedraw_core::PageId>,
     pub objects_master_closed: bool,
     /// Objects docker: the cached thumbnails of the objects.
     pub object_thumbs: crate::object_thumbs::ObjectThumbs,
@@ -2642,7 +2641,7 @@ impl App {
             settings_saved: None,
             settings_looked: None,
             settings_pending: false,
-            objects_page_closed: false,
+            objects_closed_pages: Default::default(),
             object_thumbs: Default::default(),
             objects_master_closed: false,
             picked_layer: None,
