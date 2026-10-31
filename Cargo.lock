@@ -4171,6 +4171,7 @@ dependencies = [
  "windows-sys 0.52.0",
  "winit",
  "winresource",
+ "x11rb",
  "zip",
 ]
 

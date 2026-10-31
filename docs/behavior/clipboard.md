@@ -81,6 +81,23 @@ with Ctrl (Cmd), Shift+Insert or the Paste key that came without a paste
 event or press before it pastes too, once. V let go after Ctrl is typing
 and does not paste.
 
+## Pictures on a Linux desktop (X11)
+
+A screenshot tool keeps its picture on the clipboard itself and hands it
+over when asked; a large picture comes in parts, each one after the
+reader took the one before. The clipboard library gave each part 10 ms
+and asked for PNG only, so a busy program's picture often came out
+empty and took two or three pastes to arrive (#1488). On an X11 desktop
+(no `WAYLAND_DISPLAY`) the paste now reads the clipboard's list of types
+first and asks for the best picture type it offers (PNG, then BMP, TIFF,
+WebP, GIF, JPEG), gives the owner 3 s to answer and each part 2 s, and
+tries again twice, 150 ms apart, when no answer came
+(`x11_clipboard.rs`). A clipboard without a picture type is not waited
+for. On a Wayland desktop the clipboard library reads first and the X11
+clipboard the desktop keeps beside it is read when it finds nothing.
+TraceDraw keeps one connection to the system clipboard for the session
+instead of opening one for each read.
+
 ## Browser build
 
 The browser hands the clipboard only to paste events, and only as text:
@@ -100,6 +117,12 @@ available.
   clipboard): what copy and paste cost with a 4000 x 3000 picture on it.
 - `pick_drag_tests::ctrl_v_pastes_when_only_its_release_comes_through`
   and `copy_cut_and_paste_events_work_on_objects`.
+- `x11_clipboard::tests::a_picture_sent_slowly_in_parts_arrives_whole`
+  (under the X server of `DISPLAY`, else an Xvfb it starts; skipped
+  without either): a program that owns the clipboard sends a PNG in
+  2 KB parts, 30 ms apart, and the first read gets it whole; once the
+  program is gone a read finds nothing within 2 s.
+  `picture_types_go_best_first` and `pictures_decode_by_type_or_by_signature`.
 - Checked under Xvfb with `xclip`: a picture (`image/png`) and a file
   (`text/uri-list` with CR LF) copied after a copy here paste as a bitmap
   and as an imported file; copying here again pastes the copy.

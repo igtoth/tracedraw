@@ -258,34 +258,77 @@ pub fn read_system() -> ClipboardContent {
     content
 }
 
+thread_local! {
+    /// The one connection to the system clipboard, kept for the session
+    /// (#1488): a new one for each read cost a new connection to the X
+    /// server each time.
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    static SYSTEM_CLIPBOARD: std::cell::RefCell<Option<arboard::Clipboard>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Run `f` with the system clipboard, opened on first use; `None` when it
+/// cannot be opened (headless sessions have no clipboard).
+#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+fn with_clipboard<T>(f: impl FnOnce(&mut arboard::Clipboard) -> T) -> Option<T> {
+    SYSTEM_CLIPBOARD.with(|cell| {
+        let mut cb = cell.try_borrow_mut().ok()?;
+        if cb.is_none() {
+            *cb = arboard::Clipboard::new().ok();
+        }
+        cb.as_mut().map(f)
+    })
+}
+
 /// The clipboard's text and files, not its picture (decoding one costs
 /// far more).
 #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
 fn read_text_and_files() -> ClipboardContent {
-    let Ok(mut cb) = arboard::Clipboard::new() else {
-        return ClipboardContent::default();
-    };
-    let text = cb.get_text().ok().filter(|t| !t.is_empty());
-    let files = cb
-        .get()
-        .file_list()
-        .unwrap_or_default()
-        .into_iter()
-        .map(without_line_end)
-        .collect();
-    ClipboardContent {
-        text,
-        image: None,
-        files,
-    }
+    with_clipboard(|cb| {
+        let text = cb.get_text().ok().filter(|t| !t.is_empty());
+        let files = cb
+            .get()
+            .file_list()
+            .unwrap_or_default()
+            .into_iter()
+            .map(without_line_end)
+            .collect();
+        ClipboardContent {
+            text,
+            image: None,
+            files,
+        }
+    })
+    .unwrap_or_default()
 }
 
-/// The clipboard's picture, decoded.
+/// The clipboard's picture, decoded. On an X11 desktop the clipboard's
+/// types are read and its best picture type is asked for, with time for
+/// a busy program that sends a large picture in parts (#1488, see
+/// `x11_clipboard.rs`); elsewhere (Windows, macOS, a Wayland desktop),
+/// and when that finds nothing, the clipboard library reads its PNG.
 #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
 fn read_image() -> Option<image::RgbaImage> {
-    let mut cb = arboard::Clipboard::new().ok()?;
-    let img = cb.get_image().ok()?;
-    image::RgbaImage::from_raw(img.width as u32, img.height as u32, img.bytes.into_owned())
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let x11_first = std::env::var_os("WAYLAND_DISPLAY").is_none();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if x11_first {
+        if let Some(img) = crate::x11_clipboard::read_image() {
+            return Some(img);
+        }
+    }
+    let from_library = with_clipboard(|cb| cb.get_image().ok())
+        .flatten()
+        .and_then(|img| {
+            image::RgbaImage::from_raw(img.width as u32, img.height as u32, img.bytes.into_owned())
+        });
+    // A Wayland desktop whose clipboard the library cannot read: the
+    // X11 one the desktop keeps beside it.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if from_library.is_none() && !x11_first {
+        return crate::x11_clipboard::read_image();
+    }
+    from_library
 }
 
 /// A path from a copied file list without the carriage return its line
@@ -302,7 +345,7 @@ fn without_line_end(path: std::path::PathBuf) -> std::path::PathBuf {
 /// Put text on the system clipboard (best effort); whether it went there.
 #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
 pub fn write_text(text: &str) -> bool {
-    arboard::Clipboard::new().is_ok_and(|mut cb| cb.set_text(text.to_string()).is_ok())
+    with_clipboard(|cb| cb.set_text(text.to_string()).is_ok()).unwrap_or(false)
 }
 
 /// Put text on the system clipboard through the activity's clipboard

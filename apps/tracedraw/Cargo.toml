@@ -76,6 +76,12 @@ webp = { version = "0.3", default-features = false }
 [target.'cfg(not(any(target_arch = "wasm32", target_os = "android")))'.dependencies]
 arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
 
+# The X11 clipboard's picture read with its list of types and time for a
+# picture sent in parts (#1488, x11_clipboard.rs): the X11 library the
+# clipboard library already uses.
+[target.'cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))'.dependencies]
+x11rb = "0.13"
+
 # The Android app (docs/behavior/android.md): the system loads the library
 # into the app's activity, eframe drives egui through winit's Android
 # backend and draws with wgpu; the document picker, content URIs and the
