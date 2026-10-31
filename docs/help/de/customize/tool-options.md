@@ -32,6 +32,11 @@ Werkzeugs.
 - [[options.zoom_right_button]]: [[options.zoom_out]] (anfangs) oder das
   [[options.context_menu]].
 - [[options.wheel_action]]: [[options.wheel_zoom]] oder [[options.wheel_scroll]].
+- [[options.zoom_relative_1to1]] (ein): Zoom 100 % ist die echte Größe bei der
+  kalibrierten Bildschirmauflösung; aus sind es 96 Pixel pro Zoll.
+- [[options.wheel_center_mouse]] (aus): ein Zoom mit dem Mausrad bringt die Stelle unter
+  dem Zeiger in die Mitte der Ansicht, den Zeiger mit.
+- [[options.pan_right_button]] [[options.zoom_out]] oder das [[options.context_menu]] (anfangs).
 
 ## Freihand/Bézier {#curves}
 

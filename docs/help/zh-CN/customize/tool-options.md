@@ -24,6 +24,9 @@
 
 - [[options.zoom_right_button]]：[[options.zoom_out]]（起初选用）或 [[options.context_menu]]。
 - [[options.wheel_action]]：[[options.wheel_zoom]] 或 [[options.wheel_scroll]]。
+- [[options.zoom_relative_1to1]]（开启）：100% 缩放按校准的屏幕分辨率显示实际大小；关闭时为每英寸 96 像素。
+- [[options.wheel_center_mouse]]（关闭）：滚轮缩放会把指针下的位置连同指针移到视图中央。
+- [[options.pan_right_button]][[options.zoom_out]] 或 [[options.context_menu]]（初始）。
 
 ## 手绘/贝塞尔 {#curves}
 

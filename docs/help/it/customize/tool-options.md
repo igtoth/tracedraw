@@ -32,6 +32,11 @@ strumento.
 - [[options.zoom_right_button]]: [[options.zoom_out]] (in partenza) o il
   [[options.context_menu]].
 - [[options.wheel_action]]: [[options.wheel_zoom]] o [[options.wheel_scroll]].
+- [[options.zoom_relative_1to1]] (attivo): lo zoom 100% è la dimensione reale alla
+  risoluzione dello schermo calibrata; disattivo, sono 96 pixel per pollice.
+- [[options.wheel_center_mouse]] (disattivo): uno zoom con la rotellina porta il punto
+  sotto il puntatore al centro della vista, insieme al puntatore.
+- [[options.pan_right_button]] [[options.zoom_out]] o il [[options.context_menu]] (all'inizio).
 
 ## Mano libera/Bézier {#curves}
 

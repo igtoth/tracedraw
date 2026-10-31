@@ -8118,7 +8118,7 @@ impl App {
 
     /// Interface points per mm at 100%: real size at the calibrated screen
     /// resolution (Options > Display > Ruler calibration, 96 per inch by
-    /// default), or in the Pixels view one pixel at the system's scaling
+    /// default; 96 when Zoom relative to 1:1 is off), or in the Pixels view one pixel at the system's scaling
     /// per document pixel. Both go through the interface's zoom, which
     /// sizes the menus and bars, never the drawing.
     fn zoom_100(&self) -> f32 {
@@ -8126,7 +8126,7 @@ impl App {
             self.document_dpi().max(1.0) as f32
                 / crate::ui::ui_zoom(crate::settings::effective_ui_size(&self.settings))
         } else {
-            crate::settings::screen_points_per_inch(&self.settings)
+            crate::settings::zoom_points_per_inch(&self.settings)
         };
         per_inch / 25.4
     }

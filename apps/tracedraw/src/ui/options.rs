@@ -3458,6 +3458,22 @@ fn zoom_pan_page(app: &mut App, ui: &mut Ui) {
             "options.context_menu_tip",
         ));
     });
+    ui.checkbox(
+        &mut app.settings.zoom_relative_1to1,
+        tr("options.zoom_relative_1to1"),
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "options.zoom_relative_1to1",
+        "options.zoom_relative_1to1_tip",
+    ));
+    ui.checkbox(
+        &mut app.settings.wheel_zoom_centers,
+        tr("options.wheel_center_mouse"),
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "options.wheel_center_mouse",
+        "options.wheel_center_mouse_tip",
+    ));
     ui.separator();
     ui.label(tr("options.wheel_action"));
     ui.indent("wa", |ui| {
@@ -3497,6 +3513,28 @@ fn zoom_pan_page(app: &mut App, ui: &mut Ui) {
             .color(Tokens::text_dim())
             .size(12.0),
     );
+    chrome::section(ui, &tr("options.pan_tool"));
+    ui.label(tr("options.pan_right_button"));
+    ui.indent("pr", |ui| {
+        ui.radio_value(
+            &mut app.settings.pan_right_click_out,
+            true,
+            tr("options.zoom_out"),
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.zoom_out",
+            "options.pan_zoom_out_tip",
+        ));
+        ui.radio_value(
+            &mut app.settings.pan_right_click_out,
+            false,
+            tr("options.context_menu"),
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.context_menu",
+            "options.pan_context_menu_tip",
+        ));
+    });
 }
 
 fn rectangle_page(app: &mut App, ui: &mut Ui) {

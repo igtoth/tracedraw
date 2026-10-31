@@ -32,6 +32,11 @@ ada di bilah properti masing-masing alat.
   [[options.context_menu]].
 - [[options.wheel_action]]: [[options.wheel_zoom]] atau
   [[options.wheel_scroll]].
+- [[options.zoom_relative_1to1]] (aktif): zum 100% adalah ukuran nyata pada resolusi
+  layar yang dikalibrasi; nonaktif, 96 piksel per inci.
+- [[options.wheel_center_mouse]] (nonaktif): zum dengan roda membawa titik di bawah
+  penunjuk ke tengah tampilan, bersama penunjuknya.
+- [[options.pan_right_button]] [[options.zoom_out]] atau [[options.context_menu]] (awalnya).
 
 ## Tangan bebas/Bézier {#curves}
 

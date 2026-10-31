@@ -15778,3 +15778,93 @@ fn ctrl_held_after_the_press_constrains_ellipse_and_star_nodes() {
         app.doc().find_shape(star).map(|s| &s.kind)
     );
 }
+
+/// One wheel notch over the canvas at `at`, then frames for its glide.
+fn wheel_notch(ctx: &egui::Context, app: &mut App, at: Pos2, mods: Modifiers) {
+    frame(ctx, app, vec![Event::PointerMoved(at)], mods);
+    frame(
+        ctx,
+        app,
+        vec![Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, 1.0),
+            modifiers: mods,
+            phase: egui::TouchPhase::Move,
+        }],
+        mods,
+    );
+    for _ in 0..30 {
+        frame(ctx, app, Vec::new(), mods);
+    }
+}
+
+/// Options > Tools > Zoom/Pan > Center mouse when zooming with the mouse
+/// wheel: off, the point under the pointer stays there; on, it comes to
+/// the middle of the view.
+#[test]
+fn a_wheel_zoom_can_bring_the_pointed_spot_to_the_middle() {
+    for centers in [false, true] {
+        let (ctx, mut app, _) = setup();
+        app.settings.wheel_zoom_centers = centers;
+        let center = app.canvas_rect.center();
+        let at = center + egui::vec2(-150.0, -100.0);
+        let spot = app.view.to_page(at);
+        let zoom = app.view.zoom;
+        wheel_notch(&ctx, &mut app, at, Modifiers::NONE);
+        assert!(app.view.zoom > zoom * 1.1, "centers {centers}: no zoom");
+        let lands = if centers { center } else { at };
+        let now = app.view.to_page(lands);
+        assert!(
+            close(now.x, spot.x) && close(now.y, spot.y),
+            "centers {centers}: {spot:?} is now at {now:?}"
+        );
+    }
+}
+
+/// Options > Tools > Zoom/Pan, Pan tool: a right click opens the context
+/// menu at first, or zooms out.
+#[test]
+fn the_pan_tools_right_click_opens_the_menu_or_zooms_out() {
+    for zooms_out in [false, true] {
+        let (ctx, mut app, _) = setup();
+        app.set_tool(Tool::Pan);
+        app.settings.pan_right_click_out = zooms_out;
+        let at = app.canvas_rect.center() + egui::vec2(200.0, 150.0);
+        let zoom = app.view.zoom;
+        frame(&ctx, &mut app, vec![Event::PointerMoved(at)], Modifiers::NONE);
+        frame(
+            &ctx,
+            &mut app,
+            vec![button(at, true, PointerButton::Secondary, Modifiers::NONE)],
+            Modifiers::NONE,
+        );
+        frame(
+            &ctx,
+            &mut app,
+            vec![button(at, false, PointerButton::Secondary, Modifiers::NONE)],
+            Modifiers::NONE,
+        );
+        if zooms_out {
+            assert!((app.view.zoom - zoom * 0.5).abs() < 1e-4);
+            assert!(app.context_menu.is_none());
+        } else {
+            assert_eq!(app.view.zoom, zoom);
+            assert!(app.context_menu.is_some());
+        }
+    }
+}
+
+/// Options > Tools > Zoom/Pan > Zoom relative to 1:1: on, 100 % is the
+/// real size at the calibrated resolution; off, 96 per inch.
+#[test]
+fn zoom_100_follows_the_calibration_only_when_relative_to_1_to_1() {
+    let mut app = App::headless();
+    app.settings.ui_size = 1.0;
+    app.settings.screen_ppi = 192.0;
+    app.set_zoom_percent(100.0);
+    let calibrated = app.view.zoom;
+    app.settings.zoom_relative_1to1 = false;
+    assert!((app.zoom_percent() - 200.0).abs() < 0.5);
+    app.set_zoom_percent(100.0);
+    assert!((app.view.zoom * 2.0 - calibrated).abs() < 1e-3);
+}

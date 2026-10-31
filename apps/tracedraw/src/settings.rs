@@ -340,6 +340,20 @@ pub struct Settings {
     /// out (off: it opens the context menu).
     #[serde(default = "default_true")]
     pub zoom_right_click_out: bool,
+    /// Options > Tools > Zoom/Pan: zoom 100% is the real size at the
+    /// calibrated screen resolution (on, the default); off, it is 96 per
+    /// inch whatever the calibration.
+    #[serde(default = "default_true")]
+    pub zoom_relative_1to1: bool,
+    /// Options > Tools > Zoom/Pan: a wheel zoom brings the point under
+    /// the pointer to the middle of the view and moves the pointer there
+    /// (off by default: the point stays under the pointer).
+    #[serde(default)]
+    pub wheel_zoom_centers: bool,
+    /// Options > Tools > Zoom/Pan: a right click with the Pan tool zooms
+    /// out (off, the default: it opens the context menu).
+    #[serde(default)]
+    pub pan_right_click_out: bool,
     /// Options > Customization > Color Palette.
     #[serde(default)]
     pub palette: PalettePrefs,
@@ -605,6 +619,17 @@ pub fn screen_ppi(s: &Settings) -> f32 {
 /// real size whatever the interface size.
 pub fn screen_points_per_inch(s: &Settings) -> f32 {
     screen_ppi(s) / crate::ui::ui_zoom(effective_ui_size(s))
+}
+
+/// Interface points per inch at zoom 100 %: the calibrated resolution, or
+/// 96 per inch when Options > Tools > Zoom/Pan > Zoom relative to 1:1 is
+/// off.
+pub fn zoom_points_per_inch(s: &Settings) -> f32 {
+    if s.zoom_relative_1to1 {
+        screen_points_per_inch(s)
+    } else {
+        96.0 / crate::ui::ui_zoom(effective_ui_size(s))
+    }
 }
 
 /// How much larger the Touch workspace draws the interface (bars,
@@ -1456,6 +1481,9 @@ impl Default for Settings {
             crosshair_cursor: false,
             screen_ppi: default_screen_ppi(),
             zoom_right_click_out: true,
+            zoom_relative_1to1: true,
+            wheel_zoom_centers: false,
+            pan_right_click_out: false,
             palette: PalettePrefs::default(),
             tools: ToolPrefs::default(),
             view: ViewPrefs::default(),
@@ -1987,6 +2015,8 @@ mod tests {
             partial.wheel_zooms,
             "old settings files keep the zoom default"
         );
+        assert!(partial.zoom_relative_1to1 && !partial.wheel_zoom_centers);
+        assert!(!partial.pan_right_click_out);
         assert!(partial.snap.guides);
     }
 

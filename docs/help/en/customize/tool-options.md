@@ -28,6 +28,11 @@ property bar of each tool.
 - [[options.zoom_right_button]]: [[options.zoom_out]] (at first) or the
   [[options.context_menu]].
 - [[options.wheel_action]]: [[options.wheel_zoom]] or [[options.wheel_scroll]].
+- [[options.zoom_relative_1to1]] (on): zoom 100% is the real size at the calibrated screen
+  resolution; off, it is 96 pixels per inch.
+- [[options.wheel_center_mouse]] (off): a wheel zoom brings the spot under the pointer
+  to the middle of the view, and the pointer with it.
+- [[options.pan_right_button]] [[options.zoom_out]] or the [[options.context_menu]] (at first).
 
 ## Freehand/Bézier {#curves}
 

@@ -31,6 +31,11 @@ deze waarden staan ook op de eigenschappenbalk van elk gereedschap.
 - [[options.zoom_right_button]]: [[options.zoom_out]] (in het begin) of het
   [[options.context_menu]].
 - [[options.wheel_action]]: [[options.wheel_zoom]] of [[options.wheel_scroll]].
+- [[options.zoom_relative_1to1]] (aan): zoom 100% is de echte grootte bij de
+  gekalibreerde schermresolutie; uit is het 96 pixels per inch.
+- [[options.wheel_center_mouse]] (uit): zoomen met het wiel brengt de plek onder de
+  aanwijzer naar het midden van de weergave, en de aanwijzer mee.
+- [[options.pan_right_button]] [[options.zoom_out]] of het [[options.context_menu]] (eerst).
 
 ## Vrije hand/Bézier {#curves}
 
