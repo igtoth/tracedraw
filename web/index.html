@@ -119,6 +119,27 @@
   <script type="module">
     import init from "./tracedraw.js";
 
+    // Files the system opens with the installed app (its file manager's
+    // Open with, #646; manifest.webmanifest file_handlers): read here and
+    // queued for the editor, which opens each in a tab of its own
+    // (web.rs, take_launched_files). launch_handler focus-existing sends
+    // them to the window already open.
+    window.tracedrawLaunched = [];
+    if ("launchQueue" in window) {
+      window.launchQueue.setConsumer(async (params) => {
+        for (const handle of params.files || []) {
+          try {
+            const file = await handle.getFile();
+            const bytes = new Uint8Array(await file.arrayBuffer());
+            window.tracedrawLaunched.push({ name: file.name, bytes });
+          } catch (e) {
+            console.warn("TraceDraw: a launched file could not be read: " + e);
+          }
+        }
+        window.dispatchEvent(new Event("tracedraw-launched"));
+      });
+    }
+
     const status = document.getElementById("loading-status");
     const bar = document.getElementById("loading-bar");
     const error = document.getElementById("loading-error");

@@ -101,8 +101,21 @@ change marked `TraceDraw:` in a comment.
     Wayland is unchanged: winit does not bind the tablet protocol
     (`zwp_tablet_v2`), so a pen reaches the window there only through
     XWayland (`tracedraw --x11`, which picks winit's X11 backend).
+- Change: macOS hands the files opened from Finder (double click, Open
+  With, a file dropped on the Dock icon) to the program (#646). macOS sends
+  them as an "open documents" event, never on the command line, and winit
+  0.30 has no event for it. The application delegate
+  (`platform_impl/macos/app_state.rs`) answers `application:openURLs:`
+  and passes the paths of the file URLs to `src/opened_files.rs`, which
+  calls the handler the program set with
+  `platform::macos::set_open_files_handler`, or keeps them until one is
+  set (at launch they come before the window exists). The manifest asks
+  `objc2-foundation` for `NSURL` as well. `src/opened_files.rs` depends on
+  nothing in the crate, and TraceDraw's tests include and run it
+  (`winit_opened_files::tests`).
 - The published crate's `examples/` and `tests/` stay as downloaded (the
   manifest lists them); they build in no gate.
 - Drop the copy and the `[patch.crates-io]` entry when a winit release
-  carries pen pressure on X11 and macOS (rust-windowing/winit#99), and
+  carries pen pressure on X11 and macOS (rust-windowing/winit#99) and
+  passes on the files macOS asks to open, and
   check that egui-winit still maps `Touch` forces the same way.

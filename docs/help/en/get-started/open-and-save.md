@@ -28,6 +28,12 @@ label shown while you drag say which will happen. Where the system does not
 say where the pointer is (Linux, macOS), drawings open in a tab and pictures
 are imported.
 
+A drawing opened from the system while TraceDraw runs (a double click in
+the file manager or in Finder, Open with, or Share on Android) opens in a
+tab of the running window, which comes to the front. The browser version
+installed as an app does the same for `.tdraw`, `.cdr`, `.svg` and `.pdf`
+files in browsers that let installed apps open files.
+
 How a drawing is first shown (the whole page, its objects, the page's width,
 real size, or the page, place and zoom it had when it was saved) is set by
 [[options.open_view]] on the [[options.display]] page of

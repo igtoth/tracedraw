@@ -758,8 +758,9 @@ pub fn restart_with(next: Mode, args: &[String]) -> bool {
         return false;
     };
     hand_over();
+    let args = crate::instance::with_files_opened_by_system(args);
     std::process::Command::new(exe)
-        .args(args_with(next, args))
+        .args(args_with(next, &args))
         .status()
         .is_ok()
 }
@@ -770,8 +771,9 @@ fn spawn_with(next: Mode, args: &[String]) -> bool {
     let Ok(exe) = std::env::current_exe() else {
         return false;
     };
+    let args = crate::instance::with_files_opened_by_system(args);
     std::process::Command::new(exe)
-        .args(args_with(next, args))
+        .args(args_with(next, &args))
         .spawn()
         .is_ok()
 }

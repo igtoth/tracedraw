@@ -529,3 +529,16 @@ pub enum OptionAsAlt {
     #[default]
     None,
 }
+
+/// TraceDraw: receive the files the system asks the application to open
+/// (Finder's double click and Open With, a file dropped on the Dock icon),
+/// which macOS sends as an "open documents" event rather than on the
+/// command line. Set it before the event loop runs: files that arrive
+/// earlier are handed to it as soon as it is set. The handler runs on the
+/// main thread, inside the event loop.
+#[cfg(macos_platform)]
+pub fn set_open_files_handler(
+    handler: impl Fn(Vec<std::path::PathBuf>) + Send + 'static,
+) {
+    crate::opened_files::set_handler(Box::new(handler));
+}

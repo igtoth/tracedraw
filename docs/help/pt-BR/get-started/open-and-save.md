@@ -29,6 +29,13 @@ aberto. A moldura e o rótulo mostrados durante o arraste dizem o que vai
 acontecer. Onde o sistema não informa onde está o ponteiro (Linux, macOS),
 desenhos abrem em uma guia e imagens são importadas.
 
+Um desenho aberto pelo sistema enquanto o TraceDraw está em execução (um
+clique duplo no gerenciador de arquivos ou no Finder, Abrir com, ou
+Compartilhar no Android) abre em uma guia da janela já aberta, que vem para
+a frente. A versão para navegador instalada como aplicativo faz o mesmo com
+arquivos `.tdraw`, `.cdr`, `.svg` e `.pdf` nos navegadores que deixam
+aplicativos instalados abrir arquivos.
+
 Como um desenho aparece primeiro (a página inteira, seus objetos, a largura da
 página, o tamanho real, ou a página, a posição e o zoom que tinha ao ser salvo)
 é definido em [[options.open_view]], na página [[options.display]] de

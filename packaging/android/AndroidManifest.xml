@@ -58,6 +58,40 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Documents other apps open with TraceDraw (a file manager's
+                 Open with, a mail's attachment, Share): they open in tabs
+                 of the running editor (#646, TraceDrawActivity.onNewIntent).
+                 image/* takes pictures and the types file managers give
+                 .cdr and .svg files; .tdraw and many .cdr files come as
+                 octet-stream. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/x-tdraw" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-cdr" />
+                <data android:mimeType="application/cdr" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/postscript" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/x-tdraw" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-cdr" />
+                <data android:mimeType="application/cdr" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/postscript" />
+            </intent-filter>
         </activity>
         <!-- The files the editor hands to another app (a PDF through the
              share sheet, a picture to edit, #1398), served from the app's

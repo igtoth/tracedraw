@@ -15,6 +15,8 @@ TraceDraw 以自己的格式 `.tdraw` 儲存繪圖，這種格式會保留所有
 
 繪圖最初如何顯示（整個頁面、其物件、頁面寬度、實際大小，或儲存時的頁面、位置和縮放）由 [[menu.tools > menu.tools.options > menu.tools.options_app]] 的 [[options.display]] 頁面上的 [[options.open_view]] 設定。
 
+在 TraceDraw 執行時從系統開啟繪圖（在檔案管理員或 Finder 中按兩下、開啟方式，或 Android 的分享），會在執行中視窗的分頁中開啟，視窗也會移到最前面。安裝為應用程式的瀏覽器版本，在允許已安裝應用程式開啟檔案的瀏覽器中，也會以相同方式開啟 `.tdraw`、`.cdr`、`.svg` 和 `.pdf` 檔案。
+
 ### 開啟後的通知 {#open-notes}
 
 當開啟的檔案中有些物件無法讀取，或繪圖使用了電腦上未安裝的字型時，檔案開啟後會有一則訊息告知：

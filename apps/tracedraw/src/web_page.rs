@@ -596,4 +596,37 @@ mod tests {
         assert!(!windows_platform("Linux x86_64", linux));
         assert!(!windows_platform("", ""));
     }
+
+    /// The installed app is offered for drawings by the system and opens
+    /// them in the window already open (#646): the manifest's file
+    /// handlers and launch handler, the page reading the launch queue into
+    /// the queue the editor takes, and the event that wakes it.
+    #[test]
+    fn the_installed_app_opens_files_from_the_system() {
+        let manifest: serde_json::Value =
+            serde_json::from_str(MANIFEST).expect("the manifest is JSON");
+        assert_eq!(manifest["launch_handler"]["client_mode"], "focus-existing");
+        let handlers = manifest["file_handlers"].as_array().expect("file_handlers");
+        let accept = &handlers[0]["accept"];
+        assert_eq!(handlers[0]["action"], "./");
+        for ext in [".tdraw", ".cdr", ".svg", ".pdf"] {
+            assert!(
+                accept.as_object().is_some_and(|m| m
+                    .values()
+                    .any(|v| v.as_array().is_some_and(|a| a.iter().any(|e| e == ext)))),
+                "the file handlers lack {ext}"
+            );
+        }
+        for needed in [
+            "window.tracedrawLaunched = [];",
+            "window.launchQueue.setConsumer(",
+            "window.tracedrawLaunched.push({ name: file.name, bytes });",
+            "window.dispatchEvent(new Event(\"tracedraw-launched\"));",
+        ] {
+            assert!(PAGE.contains(needed), "the page lacks {needed:?}");
+        }
+        let web = include_str!("web.rs");
+        assert!(web.contains("\"tracedrawLaunched\".into()"));
+        assert!(web.contains("\"tracedraw-launched\""));
+    }
 }

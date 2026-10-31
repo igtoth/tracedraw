@@ -205,6 +205,10 @@ mod x11_clipboard;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "../../../vendor/winit/src/pen_pressure.rs"]
 mod winit_pen_pressure;
+// The queue of files macOS asks to open, of the same copy (#646).
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "../../../vendor/winit/src/opened_files.rs"]
+mod winit_opened_files;
 mod workspace_file;
 
 /// The desktop program: the window, with the command line's files and
@@ -278,6 +282,19 @@ pub fn run() -> eframe::Result<()> {
         let _ = inbox.send(rest);
     }
     let wake = primary.as_ref().map(|p| p.wake.clone());
+    // macOS sends the files opened from Finder (double click, Open With,
+    // the Dock icon) as an "open documents" event, at launch and while
+    // TraceDraw runs, never on the command line (#646): they join the
+    // files handed over and open in tabs of this window.
+    #[cfg(target_os = "macos")]
+    let wake = {
+        let wake = wake.unwrap_or_default();
+        let (sink, ctx) = (inbox.clone(), wake.clone());
+        winit::platform::macos::set_open_files_handler(move |files| {
+            instance::deliver_opened(&sink, ctx.get(), files);
+        });
+        Some(wake)
+    };
     let mut settings = settings::Settings::load();
     // `--reset-settings`: every preference back to how TraceDraw comes
     // (the recent drawings and the window's size are kept).
@@ -828,6 +845,13 @@ impl eframe::App for Shell {
         if let Some(rx) = &self.handed_over {
             if instance::open_handed_over(app, ui.ctx(), rx) {
                 ui.ctx().request_repaint();
+            }
+        }
+        // Files the system opened with the installed browser app (#646).
+        #[cfg(target_arch = "wasm32")]
+        if !app.closing_all && matches!(app.dialog, crate::ui::dialogs::Dialog::None) {
+            for path in web::take_launched_files() {
+                app.open_path(path);
             }
         }
         // Requests of AI agents for the open drawing (MCP).

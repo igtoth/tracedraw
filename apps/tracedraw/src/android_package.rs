@@ -247,6 +247,7 @@ mod tests {
                 "setClipboardText",
                 "(Ljava/lang/String;)Z",
             ),
+            ("public void readyForDocuments()", "readyForDocuments", "()V"),
         ] {
             assert!(ACTIVITY.contains(java), "the activity lacks {java:?}");
             assert!(
@@ -516,5 +517,44 @@ mod tests {
                 "scripts/android/emulator_check.sh lacks {needed:?}"
             );
         }
+    }
+
+    /// A document another app opens with TraceDraw (a file manager's Open
+    /// with, Share) reaches the editor (#646): the manifest offers the app
+    /// for VIEW, EDIT and SEND of drawings, the activity takes the intent
+    /// that started it and the ones that come while it runs (singleTask),
+    /// keeps the first until the editor is ready, and hands the documents
+    /// over under the request code the bridge opens in tabs.
+    #[test]
+    fn documents_opened_from_other_apps_reach_the_editor() {
+        for needed in [
+            "android:launchMode=\"singleTask\"",
+            "android.intent.action.VIEW",
+            "android.intent.action.EDIT",
+            "android.intent.action.SEND",
+            "android.intent.action.SEND_MULTIPLE",
+            "android.intent.category.DEFAULT",
+            "<data android:scheme=\"content\" />",
+            "<data android:mimeType=\"application/octet-stream\" />",
+            "<data android:mimeType=\"application/x-cdr\" />",
+            "<data android:mimeType=\"image/*\" />",
+        ] {
+            assert!(MANIFEST.contains(needed), "the manifest lacks {needed:?}");
+        }
+        for needed in [
+            "private static final int OPENED_ELSEWHERE = 0;",
+            "protected void onCreate(Bundle savedInstanceState)",
+            "pendingOpen = start;",
+            "Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY",
+            "protected void onNewIntent(Intent intent)",
+            "if (editorReady) {",
+            "sendDocuments(OPENED_ELSEWHERE, uris, 0);",
+            "Intent.EXTRA_STREAM",
+        ] {
+            assert!(ACTIVITY.contains(needed), "the activity lacks {needed:?}");
+        }
+        assert!(BRIDGE.contains("pub const OPENED_ELSEWHERE: i32 = 0;"));
+        let files = include_str!("files.rs");
+        assert!(files.contains("answer.request == documents::OPENED_ELSEWHERE"));
     }
 }
