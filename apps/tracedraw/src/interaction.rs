@@ -3768,11 +3768,11 @@ impl App {
                             }
                             if *t == Tool::Pick && self.tool == Tool::Pick {
                                 if self.previous_tool != Tool::Pick {
-                                    self.set_tool(self.previous_tool);
+                                    self.choose_tool(self.previous_tool);
                                 }
                                 return;
                             }
-                            self.set_tool(*t);
+                            self.choose_tool(*t);
                         }
                     }
                 }

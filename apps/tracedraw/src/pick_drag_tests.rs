@@ -9046,6 +9046,51 @@ fn the_hints_panel_shows_the_page_of_the_picked_object() {
     assert_eq!(app.hints.current(), HintPage::Tool(Tool::Rectangle));
 }
 
+/// #1321: the Hints panel follows the active tool. A tool's key shows its
+/// page; the same tool's key again, after the user went to Home, shows it
+/// again; a click on an object with an effect tool keeps that tool's page.
+#[test]
+fn the_hints_panel_follows_every_tool_choice() {
+    use crate::ui::hints::HintPage;
+    let (ctx, mut app, _) = setup();
+    app.docker_tab = crate::app::DockerTab::Hints;
+    app.show_dockers = true;
+    app.select(Vec::new());
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::F6, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(app.tool, Tool::Rectangle);
+    assert_eq!(app.hints.current(), HintPage::Tool(Tool::Rectangle));
+    app.hints.go(HintPage::Home);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(app.hints.current(), HintPage::Home);
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::F6, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(app.hints.current(), HintPage::Tool(Tool::Rectangle));
+    // Every tool, chosen as the toolbox chooses it, shows its own page.
+    for t in Tool::ALL {
+        app.choose_tool(t);
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        assert_eq!(app.hints.current(), HintPage::Tool(t), "{t:?}");
+    }
+    // The Contour tool picks the rectangle first: its steps stay.
+    app.choose_tool(Tool::Contour);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    click_page(&ctx, &mut app, Point::new(35.0, 25.0));
+    assert_eq!(app.selection.len(), 1);
+    assert_eq!(app.hints.current(), HintPage::Tool(Tool::Contour));
+}
+
 /// The tabs of paragraph text frames, with the pointer: a drag from a
 /// frame's bottom tab onto another frame flows its text on into it; a
 /// click on a picked frame's top tab and then a click on another frame

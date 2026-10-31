@@ -361,9 +361,11 @@ impl Topic {
 pub struct HintsState {
     history: Vec<HintPage>,
     pos: usize,
-    /// The tool the docker last followed: a different active tool shows
+    /// The tool the docker last followed and the count of tool choices
+    /// then: a different active tool, or the same one chosen again, shows
     /// that tool's page.
     followed: Tool,
+    chosen: u64,
     /// The selection the docker last followed.
     selection: Option<SelectionKey>,
 }
@@ -374,6 +376,7 @@ impl Default for HintsState {
             history: vec![HintPage::Home],
             pos: 0,
             followed: Tool::Pick,
+            chosen: 0,
             selection: None,
         }
     }
@@ -417,21 +420,26 @@ impl HintsState {
         }
     }
 
-    /// Follow the active tool: a newly chosen tool shows its page.
-    pub fn follow(&mut self, tool: Tool) {
-        if tool != self.followed {
+    /// Follow the active tool: a newly chosen tool shows its page, and so
+    /// does the active tool chosen again (`chosen` is the app's count of
+    /// tool choices), after a topic, an object page or Home (#1321).
+    pub fn follow(&mut self, tool: Tool, chosen: u64) {
+        if tool != self.followed || chosen != self.chosen {
             self.followed = tool;
+            self.chosen = chosen;
             self.go(HintPage::Tool(tool));
         }
     }
 
     /// Follow the selection after the tool. `key` names the selection;
-    /// `kind` reads it and is only called when the key changed. A newly
-    /// picked object shows its kind's page; an empty selection goes back
-    /// to the tool's page. With a tool that draws, a selection that came
-    /// with a change to the drawing (the object just drawn) leaves the
-    /// tool's steps in view; with the Pick and Shape tools every new
-    /// selection shows its page. A change to the drawing that keeps the
+    /// `kind` reads it and is only called when the key changed. With the
+    /// Pick, Freehand Pick, Free Transform and Shape tools a newly picked
+    /// object shows its kind's page. Any other tool keeps its own page in
+    /// view whatever it selects or draws (an effect, fill or drawing tool
+    /// is used on an object it picks first, and its steps are what the
+    /// panel is for then, #1321); an object page already in view follows
+    /// the new selection. An empty selection goes back to the tool's page
+    /// from an object page. A change to the drawing that keeps the
     /// selection only updates an object page already in view (Convert to
     /// Curves turns the rectangle's page into the curve's).
     pub fn follow_selection(
@@ -452,7 +460,6 @@ impl HintsState {
         }
         let same_selection =
             (old.0, old.2, old.3, old.4, old.5) == (key.0, key.2, key.3, key.4, key.5);
-        let edited = old.0 != key.0 || old.1 != key.1;
         let kind = kind();
         let on_object = matches!(self.current(), HintPage::Object(_));
         if same_selection {
@@ -472,7 +479,7 @@ impl HintsState {
                     tool,
                     Tool::Pick | Tool::FreeformPick | Tool::FreeTransform | Tool::Shape
                 );
-                if selects || !edited {
+                if selects || on_object {
                     self.go(HintPage::Object(k));
                 }
             }
@@ -494,7 +501,7 @@ pub fn selection_key(app: &App) -> SelectionKey {
 
 /// The docker: the page in a scroll area and the navigation bar under it.
 pub fn hints_docker(app: &mut App, ui: &mut Ui) {
-    app.hints.follow(app.tool);
+    app.hints.follow(app.tool, app.tool_chosen);
     let key = selection_key(app);
     let tool = app.tool;
     // The selection is read only when its key changed (once per change,
@@ -994,12 +1001,16 @@ mod tests {
         h.back();
         h.back();
         assert_eq!(h.current(), HintPage::Home);
-        // Choosing a tool shows its page; the same tool again does nothing.
-        h.follow(Tool::Rectangle);
+        // Choosing a tool shows its page; frames with no new choice leave
+        // the page the user went to.
+        h.follow(Tool::Rectangle, 1);
         assert_eq!(h.current(), HintPage::Tool(Tool::Rectangle));
         h.back();
-        h.follow(Tool::Rectangle);
+        h.follow(Tool::Rectangle, 1);
         assert_eq!(h.current(), HintPage::Home);
+        // The active tool chosen again shows its page again (#1321).
+        h.follow(Tool::Rectangle, 2);
+        assert_eq!(h.current(), HintPage::Tool(Tool::Rectangle));
     }
 
     #[test]
@@ -1063,7 +1074,7 @@ mod tests {
             )
         };
         let mut h = HintsState::default();
-        h.follow(Tool::Pick);
+        h.follow(Tool::Pick, 0);
         h.follow_selection(Tool::Pick, key(0, &[]), || None);
         assert_eq!(h.current(), HintPage::Home);
         // A pick shows the object's page; the same key reads nothing.
@@ -1082,13 +1093,23 @@ mod tests {
         h.go(HintPage::Home);
         h.follow_selection(Tool::Pick, key(1, &[7]), || Some(ObjectKind::Curve));
         assert_eq!(h.current(), HintPage::Home);
-        // A drawing tool: the object it just drew keeps the tool's steps,
-        // a plain pick (no edit) shows the object.
-        h.follow(Tool::Ellipse);
+        // A drawing tool: the object it just drew and an object it picks
+        // keep the tool's steps (#1321).
+        h.follow(Tool::Ellipse, 0);
         h.follow_selection(Tool::Ellipse, key(2, &[8]), || Some(ObjectKind::Ellipse));
         assert_eq!(h.current(), HintPage::Tool(Tool::Ellipse));
         h.follow_selection(Tool::Ellipse, key(2, &[7]), || Some(ObjectKind::Curve));
+        assert_eq!(h.current(), HintPage::Tool(Tool::Ellipse));
+        // An effect tool picks its object first: its page stays.
+        h.follow(Tool::Contour, 0);
+        h.follow_selection(Tool::Contour, key(2, &[9]), || Some(ObjectKind::Rectangle));
+        assert_eq!(h.current(), HintPage::Tool(Tool::Contour));
+        // An object page the user opened follows the selection.
+        h.go(HintPage::Object(ObjectKind::Rectangle));
+        h.follow_selection(Tool::Contour, key(2, &[7]), || Some(ObjectKind::Curve));
         assert_eq!(h.current(), HintPage::Object(ObjectKind::Curve));
+        h.follow_selection(Tool::Contour, key(2, &[]), || None);
+        assert_eq!(h.current(), HintPage::Tool(Tool::Contour));
     }
 
     #[test]

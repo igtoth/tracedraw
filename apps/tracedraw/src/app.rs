@@ -886,6 +886,10 @@ pub struct App {
     pub view: View,
     pub tool: Tool,
     pub previous_tool: Tool,
+    /// How many times a tool was chosen (the toolbox, its flyouts, the
+    /// standard bar, a tool's key), the same one again too: the Hints
+    /// panel shows the chosen tool's page on each (#1321).
+    pub tool_chosen: u64,
     /// The Zoom tool was picked with F2: after one zoom (a click, a
     /// right click or a marquee) the tool before it comes back (#1039).
     pub zoom_one_shot: bool,
@@ -2365,6 +2369,7 @@ impl App {
             view: View::default(),
             tool: Tool::Pick,
             previous_tool: Tool::Pick,
+            tool_chosen: 0,
             zoom_one_shot: false,
             selection: Vec::new(),
             focus: Vec::new(),
@@ -4608,6 +4613,14 @@ impl App {
         } else {
             self.open_docker(tab);
         }
+    }
+
+    /// The user chose `tool` (a click on its button, its key): the tool
+    /// becomes the active one and the Hints panel shows its page, even
+    /// when it was already active (#1321).
+    pub fn choose_tool(&mut self, tool: Tool) {
+        self.set_tool(tool);
+        self.tool_chosen = self.tool_chosen.wrapping_add(1);
     }
 
     pub fn set_tool(&mut self, tool: Tool) {

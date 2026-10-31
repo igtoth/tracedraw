@@ -742,7 +742,7 @@ fn tool_item(app: &mut App, ui: &mut Ui, t: Tool) {
         Tokens::icon(),
     );
     if resp.clicked() {
-        app.set_tool(t);
+        app.choose_tool(t);
     }
 }
 

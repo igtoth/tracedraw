@@ -302,7 +302,7 @@ fn tools(app: &mut App, ui: &mut Ui, dock: crate::ui::bars::Dock, fitted: Option
         crate::ui::bars::bar_menu(app, &resp, crate::ui::bars::Bar::Toolbox);
         // A plain click picks the shown tool (not when it opened the flyout).
         if resp.clicked() && !(has_flyout && on_arrow) && app.flyout_open != Some(gi) {
-            app.set_tool(shown);
+            app.choose_tool(shown);
         }
         // Double-clicking a tool button: Pick selects every object, Shape
         // every node, Zoom fits the drawing, Rectangle adds a frame around
@@ -460,7 +460,7 @@ fn flyout(app: &mut App, ui: &mut Ui, gi: usize, button: Rect, dock: crate::ui::
                             );
                         }
                         if rr.on_hover_ui(|ui| tool_tooltip(ui, *t)).clicked() {
-                            app.set_tool(*t);
+                            app.choose_tool(*t);
                             close = true;
                         }
                         if SEPARATE_AFTER.contains(t) {

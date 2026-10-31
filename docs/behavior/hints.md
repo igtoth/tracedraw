@@ -36,17 +36,21 @@ Every page ends with "Learn more" and its help topic link.
 
 ## Navigation
 
-- Choosing another tool shows that tool's page (the panel follows the
-  active tool; it starts on Home with the Pick tool).
-- Selecting objects shows the object page of what was picked; letting
-  go of the selection (a click on an empty spot, Esc) goes back to the
-  active tool's page. With the Pick, Freehand Pick, Free Transform and
-  Shape tools every new selection shows its page. With other tools only
-  a selection made without changing the drawing does (a click on an
-  object): the object a drawing tool has just drawn leaves the tool's
-  steps in view. A change to the drawing that keeps the selection (Convert
-  to Curves) updates an object page already in view, and leaves any other
-  page alone.
+- Choosing a tool shows that tool's page (the panel follows the active
+  tool; it starts on Home with the Pick tool). Choosing the active tool
+  again (its toolbox button, its flyout entry, the standard bar's
+  button or its key) shows its page again after the user went to
+  another page (#1321).
+- With the Pick, Freehand Pick, Free Transform and Shape tools selecting
+  objects shows the object page of what was picked; letting go of the
+  selection (a click on an empty spot, Esc) goes back to the active
+  tool's page. Every other tool keeps its own page in view whatever it
+  picks or draws: an effect, fill or outline tool is used on an object
+  it picks first, and a drawing tool selects what it has just drawn, so
+  the tool's steps stay (#1321). An object page already in view (opened
+  from the panel) follows the selection with any tool. A change to the
+  drawing that keeps the selection (Convert to Curves) updates an object
+  page already in view, and leaves any other page alone.
 - The panel compares a small key of the selection each frame (the
   document, its revision, the page, the number of selected objects and
   the first and last of them) and reads the selected objects only when
@@ -68,5 +72,6 @@ descriptions are the same ones the toolbox tooltips show.
 - `ui::hints::tests::every_object_kind_has_its_texts_tools_and_a_help_page`
 - `ui::hints::tests::the_selection_shows_its_page_and_letting_go_shows_the_tool`
 - `pick_drag_tests::the_hints_panel_shows_the_page_of_the_picked_object`
+- `pick_drag_tests::the_hints_panel_follows_every_tool_choice`
 - `ui::hint_pics::tests::every_tool_has_steps_with_text_and_pictures`
 - `ui::hint_pics::tests::every_picture_draws_on_a_page`
