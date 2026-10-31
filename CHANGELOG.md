@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Browser version: on Windows, the message shown at start (and the one at a macro command) has a third button, Get it from the Microsoft Store, and says that the Store version may be one or more releases behind the latest download while the Store certifies each version. The close button of these messages now only closes them; it opened the downloads page.
+
 ## 0.31.0 (2026-10-31)
 
 - Welcome Screen: on Get Started only the recent documents list scrolls; New and Open stay in place (#1383).

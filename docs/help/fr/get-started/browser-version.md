@@ -14,7 +14,10 @@ les mêmes.
 À chaque ouverture de la page, un message explique que la version pour
 navigateur est le même programme que la version de bureau, et ce qui
 diffère. [[dialog.ok]] (ou <kbd>Entrée</kbd>) le ferme ; un second bouton
-ouvre la page de téléchargement de la version de bureau.
+ouvre la page de téléchargement de la version de bureau. Sous Windows, un
+troisième bouton ouvre TraceDraw dans le Microsoft Store, et le message
+précise que la version du Store peut avoir une ou plusieurs versions de retard
+sur le dernier téléchargement, car le Store certifie d'abord chaque version.
 
 ## Ce qui diffère de la version de bureau {#differences}
 

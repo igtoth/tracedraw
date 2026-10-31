@@ -13,7 +13,10 @@ für den Browser erstellt, sodass Menüs, Werkzeuge und Dateien dieselben sind.
 Bei jedem Öffnen der Seite erklärt eine Meldung, dass die Browserversion
 dasselbe Programm wie die Desktopversion ist und was sich unterscheidet.
 [[dialog.ok]] (oder <kbd>Enter</kbd>) schließt sie; eine zweite Schaltfläche
-öffnet die Downloads der Desktopversion.
+öffnet die Downloads der Desktopversion. Unter Windows öffnet eine dritte
+Schaltfläche TraceDraw im Microsoft Store, und die Meldung ergänzt, dass die
+Store-Version eine oder mehrere Versionen hinter dem neuesten Download liegen
+kann, weil der Store jede Version zuerst zertifiziert.
 
 ## Unterschiede zur Desktopversion {#differences}
 
