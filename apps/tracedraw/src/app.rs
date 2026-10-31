@@ -2832,6 +2832,22 @@ impl App {
         app
     }
 
+    /// Tell the user, once per kind and session, that the browser did not
+    /// keep the shelf, the settings or an auto-backup (#1414): a message
+    /// when no other dialog is open, and the status bar.
+    pub fn tell_storage_refusals(&mut self) {
+        if !crate::storage_full::pending()
+            || !matches!(self.dialog, crate::ui::dialogs::Dialog::None)
+        {
+            return;
+        }
+        if let Some(r) = crate::storage_full::take_new() {
+            let message = crate::storage_full::message(r);
+            self.status = message.split("\n\n").next().unwrap_or("").to_string();
+            self.dialog = crate::ui::dialogs::Dialog::StorageRefused(r);
+        }
+    }
+
     /// Each time the browser version opens: a message that it is the same
     /// Rust program compiled for the browser, what is slower or missing
     /// there, and the way to the desktop app.

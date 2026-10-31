@@ -18,12 +18,43 @@ refuse to load modules from `file://`).
 | Print | PDF opened in the system viewer | PDF downloaded; print it from the browser's viewer |
 | Send To | PDF written to Desktop, Documents or a mail folder | PDF downloaded |
 | Edit Bitmap (external editor) | system image editor | not available (a browser cannot hand files to programs) |
-| Settings | `settings.json` in the configuration folder, saved as they change | browser local storage (key `tracedraw.settings`), saved as they change: they stay in that browser on that computer, until its site data is cleared |
+| Settings | `settings.json` in the configuration folder, saved as they change | browser local storage (key `tracedraw.settings`), saved as they change: they stay in that browser on that computer, until its site data is cleared (see Storage below) |
+| Shelf | `shelf.json` in the configuration folder | the page's IndexedDB database `tracedraw-kept` (see Storage below) |
 | Auto-backup and session recovery | backups and session markers in the auto-backup folder (`recovery.md`) | backups in the page's IndexedDB database and markers in its local storage; leaving the page with unsaved drawings asks first (`recovery.md`, "In the browser") |
 | Recent documents | listed on the Welcome screen | not recorded (uploads have no path to reopen) |
 | Fonts | installed system fonts | bundled at build time: Liberation Sans, Serif and Mono, DejaVu Sans, Noto Sans Devanagari and Bengali; the published page's font folder adds about a hundred free families (stand-ins of the same widths for common office faces, popular families, Chinese, Japanese, Korean, Arabic, Hebrew and Thai) and its font catalog every other family of the google/fonts collection (about 2,000), each fetched the first time a drawing's text needs it or a font list's pointer rests on it (see `web/FONTS.md`); Chinese and Japanese UI text needs a font the build machine had |
 | System clipboard | text, images and copied files (arboard) | Ctrl+V takes text, pictures and files copied in other programs from the browser's paste event; Edit > Paste reads the clipboard with the browser's clipboard API, which asks once for permission, and pastes the copy made here when the browser refuses (see `clipboard.md`) |
 | Help links | system browser | a new tab |
+
+## Storage
+
+What the browser version keeps between visits lives in the page's
+storage, which the browser may refuse (#1414):
+
+- The shelf goes to an IndexedDB database of its own
+  (`tracedraw-kept`, store `kept`, key `tracedraw-shelf`), which takes
+  far more than local storage, so a shelf of pictures fits. Earlier
+  versions kept it in local storage (key `tracedraw-shelf`): it is
+  read from there when the database has none, and removed from there
+  once the database holds it, which also frees local storage for the
+  settings. The database is read when the page opens; the Shelf docker
+  waits for it (a few milliseconds), and an item added before it was
+  read is kept after the stored ones. A browser without IndexedDB keeps
+  the shelf in local storage as before.
+- The settings and the auto-backups' session markers stay in local
+  storage, the auto-backups in their own database (`tracedraw`).
+- Every write is checked: when the browser refuses one (its quota for
+  the page is full, `QuotaExceededError`, or storage is turned off, as
+  in some private windows), a message says what was not saved (the
+  shelf, the settings or the auto-backup) and why, once per kind and
+  visit, and the status bar repeats its first line. Nothing is lost
+  from the tab: the shelf, the settings and the drawings stay in memory
+  until the tab is closed or reloaded, and the previously stored shelf
+  stays as it was.
+- At the first write to a database the page asks the browser to keep
+  its storage when the disk runs low (`navigator.storage.persist()`):
+  browsers grant it by themselves for an installed app or a site used
+  often, and some ask the user.
 
 ## Loading
 

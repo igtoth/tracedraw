@@ -157,6 +157,7 @@ mod splash;
 #[cfg(not(target_arch = "wasm32"))]
 mod startup_log;
 mod step_repeat;
+mod storage_full;
 mod straighten;
 mod styles;
 mod symbol_paste;
@@ -798,6 +799,8 @@ impl eframe::App for Shell {
         #[cfg(target_arch = "wasm32")]
         web::fetch_requested_fonts();
         app.sync_fonts();
+        // What the browser could not keep (#1414).
+        app.tell_storage_refusals();
         app.sync_document_colors();
         // File dialogs that finished in the background (browser build).
         files::run_finished(app);

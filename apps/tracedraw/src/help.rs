@@ -113,6 +113,7 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::GithubHistory => "get-started/github#history",
         Dialog::WebNotice => "get-started/browser-version",
         Dialog::MacrosDesktopOnly => "get-started/browser-version#differences",
+        Dialog::StorageRefused(_) => "get-started/browser-version",
         Dialog::TimeTracker(_) => "customize/time-tracker",
         Dialog::Preflight(_) => "printing/preflight",
         Dialog::PublishPdf(_) => "file-formats/publish-pdf",

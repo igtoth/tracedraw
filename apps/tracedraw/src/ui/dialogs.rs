@@ -1047,6 +1047,9 @@ pub enum Dialog {
     /// The browser version, at any macro command: macros run in the
     /// desktop app only, with a button to its downloads.
     MacrosDesktopOnly,
+    /// The browser version: the browser did not keep the shelf, the
+    /// settings or an auto-backup (#1414).
+    StorageRefused(crate::storage_full::Refusal),
     TimeTracker(crate::ui::time_tracker::TrackerDialog),
     Preflight(crate::ui::preflight_dialog::PreflightState),
     PublishPdf(Box<crate::ui::publish_pdf::PublishState>),
@@ -2681,6 +2684,19 @@ pub fn show(app: &mut App, ctx: &Context) {
                 }
                 Some(_) => close = true,
                 None => {}
+            }
+        }
+        Dialog::StorageRefused(r) => {
+            let text = crate::storage_full::message(*r);
+            if crate::ui::chrome::message_box(
+                ctx,
+                crate::ui::chrome::MessageIcon::Info,
+                &text,
+                &[&tr("dialog.ok")],
+            )
+            .is_some()
+            {
+                close = true;
             }
         }
         Dialog::MacrosDesktopOnly => {
@@ -6751,6 +6767,10 @@ pub(crate) mod tests {
             Dialog::About,
             Dialog::WebNotice,
             Dialog::MacrosDesktopOnly,
+            Dialog::StorageRefused(crate::storage_full::Refusal {
+                what: crate::storage_full::Kept::Shelf,
+                full: true,
+            }),
             Dialog::GithubOpen(Default::default()),
             Dialog::GithubSave(Default::default()),
         ]

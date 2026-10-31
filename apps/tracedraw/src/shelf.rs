@@ -32,9 +32,20 @@ const MAX_FILE: u64 = 64 * 1024 * 1024;
 const MAX_NAME: usize = 120;
 /// Symbols inside symbols are followed this deep.
 const MAX_DEPTH: usize = 16;
-/// The browser build's local storage key.
+/// The browser build's key: in the page's kept database (`web::kept`),
+/// and in local storage, where versions before #1414 kept the shelf.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 const WEB_KEY: &str = "tracedraw-shelf";
+
+/// The shelf read from the browser's storage with the items added before
+/// it could be read after it (at most [`MAX_ITEMS`]).
+#[cfg_attr(not(any(target_arch = "wasm32", test)), allow(dead_code))]
+fn merged(stored: Vec<ShelfItem>, added: Vec<ShelfItem>) -> Vec<ShelfItem> {
+    let mut items = stored;
+    items.extend(added);
+    items.truncate(MAX_ITEMS);
+    items
+}
 
 /// One item on the shelf.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -177,22 +188,38 @@ impl Shelf {
         if self.loaded {
             return;
         }
-        self.loaded = true;
         // Unit tests never read the preferences folder they share.
         if cfg!(test) {
+            self.loaded = true;
             return;
         }
         #[cfg(target_arch = "wasm32")]
         {
-            let items = crate::web::storage_get(WEB_KEY)
-                .and_then(|s| items_from_bytes(s.as_bytes()))
+            // The page's database is read in the background: until then
+            // the shelf waits, and items added meanwhile stay and are
+            // saved with it (#1414).
+            if !crate::web::kept::ready() {
+                return;
+            }
+            self.loaded = true;
+            let stored = crate::web::kept::get(WEB_KEY)
+                .or_else(|| crate::web::storage_get(WEB_KEY).map(String::into_bytes))
+                .and_then(|bytes| items_from_bytes(&bytes))
                 .unwrap_or_default();
-            self.set_items(items);
+            let added = std::mem::take(&mut self.items);
+            let save = !added.is_empty();
+            self.set_items(merged(stored, added));
+            if save {
+                self.save();
+            }
             return;
         }
         #[allow(unreachable_code)]
-        if let Some(p) = path() {
-            self.load_from(&p);
+        {
+            self.loaded = true;
+            if let Some(p) = path() {
+                self.load_from(&p);
+            }
         }
     }
 
@@ -245,8 +272,24 @@ impl Shelf {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            if let Some(bytes) = items_to_bytes(&self.items) {
-                crate::web::storage_set(WEB_KEY, &String::from_utf8_lossy(&bytes));
+            // Not read yet: kept in memory, saved with the stored shelf.
+            if !self.loaded {
+                return;
+            }
+            let Some(bytes) = items_to_bytes(&self.items) else {
+                return;
+            };
+            // In the page's database (#1414); the copy an older version
+            // left in local storage goes once the database holds it.
+            let done: Box<dyn FnOnce()> = Box::new(|| crate::web::storage_remove(WEB_KEY));
+            let kept = crate::storage_full::Kept::Shelf;
+            if !crate::web::kept::put(WEB_KEY, &bytes, kept, Some(done)) {
+                // No IndexedDB in this browser: local storage.
+                if let Err(full) =
+                    crate::web::storage_set(WEB_KEY, &String::from_utf8_lossy(&bytes))
+                {
+                    crate::storage_full::report(kept, full);
+                }
             }
             return;
         }
@@ -977,6 +1020,30 @@ mod tests {
         let many = vec![item; MAX_ITEMS + 3];
         let bytes = items_to_bytes(&many).expect("bytes");
         assert_eq!(items_from_bytes(&bytes).map(|i| i.len()), Some(MAX_ITEMS));
+    }
+
+    /// #1414: in a browser the stored shelf is read in the background;
+    /// items added before it arrived come after the stored ones, within
+    /// the limit, so neither is lost.
+    #[test]
+    fn items_added_before_the_stored_shelf_arrived_are_kept() {
+        let named = |n: &str| ShelfItem {
+            name: n.into(),
+            shapes: vec![],
+            styles: vec![],
+            colors: vec![tracedraw_core::Color::BLACK],
+            color_styles: vec![],
+            uid: 0,
+        };
+        let items = merged(vec![named("a"), named("b")], vec![named("new")]);
+        let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(names, ["a", "b", "new"]);
+        let full = merged(vec![named("old"); MAX_ITEMS], vec![named("new")]);
+        assert_eq!(full.len(), MAX_ITEMS);
+        // A big shelf (pictures) is kept whole: the browser's database
+        // takes far more than the few megabytes of local storage.
+        let bytes = items_to_bytes(&items).expect("bytes");
+        assert_eq!(items_from_bytes(&bytes).map(|i| i.len()), Some(3));
     }
 
     #[test]

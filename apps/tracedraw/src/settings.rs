@@ -1703,7 +1703,11 @@ impl Settings {
         #[cfg(target_arch = "wasm32")]
         {
             if let Ok(s) = serde_json::to_string(self) {
-                crate::web::storage_set(WEB_KEY, &s);
+                // A refusal is told to the user; the settings stay in
+                // effect in this tab (#1414).
+                if let Err(full) = crate::web::storage_set(WEB_KEY, &s) {
+                    crate::storage_full::report(crate::storage_full::Kept::Settings, full);
+                }
             }
             return;
         }

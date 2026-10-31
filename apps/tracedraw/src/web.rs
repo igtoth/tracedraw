@@ -260,11 +260,76 @@ pub fn storage_get(key: &str) -> Option<String> {
         .ok()?
 }
 
-/// Store a value in the browser's local storage (best effort).
-pub fn storage_set(key: &str, value: &str) {
+/// Store a value in the browser's local storage. `Err(full)` when the
+/// browser refused it, `full` when its quota for the page is full
+/// (#1414).
+pub fn storage_set(key: &str, value: &str) -> Result<(), bool> {
+    let Some(Ok(Some(s))) = web_sys::window().map(|w| w.local_storage()) else {
+        return Err(false);
+    };
+    s.set_item(key, value).map_err(|e| quota_error(&e))
+}
+
+/// Remove a value from the browser's local storage.
+pub fn storage_remove(key: &str) {
     if let Some(Ok(Some(s))) = web_sys::window().map(|w| w.local_storage()) {
-        let _ = s.set_item(key, value);
+        let _ = s.remove_item(key);
     }
+}
+
+/// Whether a browser error is a full storage quota.
+pub fn quota_error(e: &wasm_bindgen::JsValue) -> bool {
+    js_sys::Reflect::get(e, &wasm_bindgen::JsValue::from_str("name"))
+        .ok()
+        .and_then(|n| n.as_string())
+        .is_some_and(|n| crate::storage_full::is_quota_error(&n))
+}
+
+/// Ask the browser, once per visit and at the first thing kept in
+/// IndexedDB, to keep the page's storage when the disk runs low instead
+/// of clearing it (`navigator.storage.persist()`, #1414). Browsers that
+/// grant it by themselves (an installed app, a site often visited) say
+/// nothing; others may ask the user.
+pub fn request_persistence() {
+    thread_local! {
+        static ASKED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+    if ASKED.with(|a| a.replace(true)) {
+        return;
+    }
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let get = |o: &wasm_bindgen::JsValue, key: &str| {
+        js_sys::Reflect::get(o, &wasm_bindgen::JsValue::from_str(key))
+            .ok()
+            .filter(|v| !v.is_undefined() && !v.is_null())
+    };
+    let Some(storage) = get(&window.into(), "navigator").and_then(|n| get(&n, "storage")) else {
+        return;
+    };
+    // `storage.persisted()` and `storage.persist()`: promises of a bool.
+    let ask = move |method: &str| {
+        let promise = get(&storage, method)
+            .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
+            .and_then(|f| f.call0(&storage).ok())
+            .and_then(|p| p.dyn_into::<js_sys::Promise>().ok());
+        async move {
+            wasm_bindgen_futures::JsFuture::from(promise?)
+                .await
+                .ok()?
+                .as_bool()
+        }
+    };
+    wasm_bindgen_futures::spawn_local(async move {
+        if ask("persisted").await == Some(true) {
+            return;
+        }
+        match ask("persist").await {
+            Some(true) => log::info!("the browser keeps this page's storage"),
+            _ => log::info!("the browser may clear this page's storage when the disk runs low"),
+        }
+    });
 }
 
 /// The bytes at `url` (relative to the page), or `None` when the request
@@ -514,6 +579,7 @@ fn navigator_text(window: &web_sys::Window, key: &str) -> String {
 pub fn start() {
     eframe::WebLogger::init(log::LevelFilter::Info).ok();
     backups::install();
+    kept::install();
     guard_shortcuts();
     watch_chorded_right_press();
     watch_pasted_files();
@@ -715,17 +781,24 @@ pub mod backups {
         })
     }
 
+    /// Write a marker (local storage) or a backup (IndexedDB); a write
+    /// the browser refuses is reported (`storage_full`, #1414), also when
+    /// it fails only after this returns.
     pub fn write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-        let error = |e: JsValue| std::io::Error::other(format!("{e:?}"));
+        let error = |e: JsValue| {
+            crate::storage_full::report(crate::storage_full::Kept::Backup, super::quota_error(&e));
+            std::io::Error::other(format!("{e:?}"))
+        };
         if is_marker(path) {
             let text = std::str::from_utf8(bytes)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            let storage = local().ok_or_else(|| std::io::Error::other("no local storage"))?;
+            let storage = local().ok_or_else(|| error(JsValue::from_str("no local storage")))?;
             return storage.set_item(&marker_key(path), text).map_err(error);
         }
+        super::request_persistence();
         let key = JsValue::from_str(&path.display().to_string());
         let value = js_sys::Uint8Array::from(bytes);
-        with_store(&path.display().to_string(), |store| {
+        with_store(&path.display().to_string(), true, |store| {
             store.put_with_key(&value, &key).map(|_| ())
         })
         .map_err(error)
@@ -740,7 +813,7 @@ pub mod backups {
         }
         LOADED.with(|l| l.borrow_mut().remove(path));
         let key = JsValue::from_str(&path.display().to_string());
-        if let Err(e) = with_store(&path.display().to_string(), |store| {
+        if let Err(e) = with_store(&path.display().to_string(), false, |store| {
             store.delete(&key).map(|_| ())
         }) {
             log::warn!("removing the backup {}: {e:?}", path.display());
@@ -755,9 +828,11 @@ pub mod backups {
 
     /// Run `f` on the store in a read-write transaction, committed at
     /// once (so it is not lost when the page closes right after); a
-    /// failure that only shows later is logged.
+    /// failure that only shows later is logged, and reported when it
+    /// was a backup being written (`report`).
     fn with_store(
         what: &str,
+        report: bool,
         f: impl FnOnce(&web_sys::IdbObjectStore) -> Result<(), JsValue>,
     ) -> Result<(), JsValue> {
         DATABASE.with(|d| {
@@ -765,25 +840,56 @@ pub mod backups {
             let db = d
                 .as_ref()
                 .ok_or_else(|| JsValue::from_str("the backup database is not open"))?;
-            let tx =
-                db.transaction_with_str_and_mode(STORE, web_sys::IdbTransactionMode::Readwrite)?;
-            let what = what.to_string();
-            let failed = Closure::once_into_js(move |_: web_sys::Event| {
-                log::warn!("the browser did not store {what} (storage full?)");
-            });
-            tx.set_onabort(Some(failed.unchecked_ref()));
+            let kept = report.then_some(crate::storage_full::Kept::Backup);
+            let tx = write_transaction(db, STORE, what, kept, None)?;
             f(&tx.object_store(STORE)?)?;
-            // Marked deprecated in web-sys's bindings only; a browser
-            // without it (Safari before 15) commits when the task ends.
-            #[allow(deprecated)]
-            let _ = tx.commit();
+            commit(&tx);
             Ok(())
         })
     }
 
+    /// A read-write transaction on `store` whose failure (it aborts when
+    /// the quota is full) is logged and, with `kept`, reported to the
+    /// user (#1414); `done` runs once it has been written.
+    pub(super) fn write_transaction(
+        db: &web_sys::IdbDatabase,
+        store: &str,
+        what: &str,
+        kept: Option<crate::storage_full::Kept>,
+        done: Option<Box<dyn FnOnce()>>,
+    ) -> Result<web_sys::IdbTransaction, JsValue> {
+        let tx = db.transaction_with_str_and_mode(store, web_sys::IdbTransactionMode::Readwrite)?;
+        let what = what.to_string();
+        let aborted = tx.clone();
+        let failed = Closure::once_into_js(move |_: web_sys::Event| {
+            let full = js_sys::Reflect::get(&aborted, &JsValue::from_str("error"))
+                .is_ok_and(|e| super::quota_error(&e));
+            log::warn!(
+                "the browser did not store {what}{}",
+                if full { " (storage full)" } else { "" }
+            );
+            if let Some(kept) = kept {
+                crate::storage_full::report(kept, full);
+            }
+        });
+        tx.set_onabort(Some(failed.unchecked_ref()));
+        if let Some(done) = done {
+            let done = Closure::once_into_js(move |_: web_sys::Event| done());
+            tx.set_oncomplete(Some(done.unchecked_ref()));
+        }
+        Ok(tx)
+    }
+
+    /// Commit at once. Marked deprecated in web-sys's bindings only; a
+    /// browser without it (Safari before 15) commits when the task ends.
+    pub(super) fn commit(tx: &web_sys::IdbTransaction) {
+        #[allow(deprecated)]
+        let _ = tx.commit();
+    }
+
     /// A promise settled by a request's success (with its result) or
     /// error.
-    fn settled(request: &web_sys::IdbRequest) -> js_sys::Promise {
+    pub(super) fn settled(request: &web_sys::IdbRequest) -> js_sys::Promise {
         let request = request.clone();
         js_sys::Promise::new(&mut |resolve, reject| {
             let done = request.clone();
@@ -798,29 +904,34 @@ pub mod backups {
         })
     }
 
-    async fn open() -> Result<web_sys::IdbDatabase, JsValue> {
+    /// Open the database `name` (version 1) with its one `store`.
+    pub(super) async fn open(name: &str, store: &str) -> Result<web_sys::IdbDatabase, JsValue> {
         let factory = web_sys::window()
             .ok_or_else(|| JsValue::from_str("no window"))?
             .indexed_db()?
             .ok_or_else(|| JsValue::from_str("no IndexedDB"))?;
-        let request = factory.open_with_u32(DATABASE_NAME, 1)?;
+        let request = factory.open_with_u32(name, 1)?;
         let made = request.clone();
+        let store = store.to_string();
         let upgrade = Closure::once_into_js(move |_: web_sys::Event| {
             if let Ok(db) = made
                 .result()
                 .and_then(|r| r.dyn_into::<web_sys::IdbDatabase>())
             {
-                let _ = db.create_object_store(STORE);
+                let _ = db.create_object_store(&store);
             }
         });
         request.set_onupgradeneeded(Some(upgrade.unchecked_ref()));
         JsFuture::from(settled(&request)).await?.dyn_into()
     }
 
-    /// Every backup in the database, by path.
-    async fn read_all(db: &web_sys::IdbDatabase) -> Result<Vec<(PathBuf, Vec<u8>)>, JsValue> {
-        let tx = db.transaction_with_str(STORE)?;
-        let store = tx.object_store(STORE)?;
+    /// Every value in `store` of the database, by key.
+    pub(super) async fn read_all(
+        db: &web_sys::IdbDatabase,
+        store: &str,
+    ) -> Result<Vec<(PathBuf, Vec<u8>)>, JsValue> {
+        let tx = db.transaction_with_str(store)?;
+        let store = tx.object_store(store)?;
         // Both asked before waiting: the transaction ends once nothing
         // is pending. Both come in key order.
         let keys = settled(&store.get_all_keys()?);
@@ -848,9 +959,9 @@ pub mod backups {
     /// marker, then let the recovery look.
     fn load() {
         wasm_bindgen_futures::spawn_local(async {
-            match open().await {
+            match open(DATABASE_NAME, STORE).await {
                 Ok(db) => {
-                    let all = read_all(&db).await.unwrap_or_else(|e| {
+                    let all = read_all(&db, STORE).await.unwrap_or_else(|e| {
                         log::warn!("reading the backups: {e:?}");
                         Vec::new()
                     });
@@ -928,5 +1039,94 @@ pub mod backups {
             KEEP_ALIVE_MS,
         );
         alive.forget();
+    }
+}
+
+/// What the browser version keeps between visits besides the settings
+/// and the auto-backups: the shelf (#1414). It goes to an IndexedDB
+/// database of its own (`tracedraw-kept`, store `kept`), keyed by name,
+/// which can hold far more than local storage (where the shelf was kept
+/// before, sharing its few megabytes with the settings) and which older
+/// versions of the page never touch. The database is read once when the
+/// page opens ([`ready`]); a write the browser refuses is reported
+/// (`storage_full`) and the values stay in memory.
+pub mod kept {
+    use std::cell::{Cell, RefCell};
+    use std::collections::HashMap;
+    use wasm_bindgen::JsValue;
+
+    const DATABASE_NAME: &str = "tracedraw-kept";
+    const STORE: &str = "kept";
+
+    thread_local! {
+        static READY: Cell<bool> = const { Cell::new(false) };
+        static DATABASE: RefCell<Option<web_sys::IdbDatabase>> = const { RefCell::new(None) };
+        /// The values, as read when the page opened and written since.
+        static VALUES: RefCell<HashMap<String, Vec<u8>>> = RefCell::new(HashMap::new());
+    }
+
+    /// Read the database.
+    pub fn install() {
+        wasm_bindgen_futures::spawn_local(async {
+            match super::backups::open(DATABASE_NAME, STORE).await {
+                Ok(db) => {
+                    match super::backups::read_all(&db, STORE).await {
+                        Ok(all) => VALUES.with(|v| {
+                            let mut v = v.borrow_mut();
+                            for (key, bytes) in all {
+                                v.insert(key.to_string_lossy().to_string(), bytes);
+                            }
+                        }),
+                        Err(e) => log::warn!("reading the kept data: {e:?}"),
+                    }
+                    DATABASE.with(|d| *d.borrow_mut() = Some(db));
+                }
+                Err(e) => log::warn!("nothing can be kept in IndexedDB in this browser: {e:?}"),
+            }
+            READY.with(|r| r.set(true));
+            super::request_repaint();
+        });
+    }
+
+    /// True once the database has been read (or could not be opened).
+    pub fn ready() -> bool {
+        READY.with(Cell::get)
+    }
+
+    /// The value kept under `key`.
+    pub fn get(key: &str) -> Option<Vec<u8>> {
+        VALUES.with(|v| v.borrow().get(key).cloned())
+    }
+
+    /// Keep `bytes` under `key` (`what` says what it is when the browser
+    /// refuses); `done` runs once they are written. False when there is
+    /// no database to write to.
+    pub fn put(
+        key: &str,
+        bytes: &[u8],
+        what: crate::storage_full::Kept,
+        done: Option<Box<dyn FnOnce()>>,
+    ) -> bool {
+        VALUES.with(|v| v.borrow_mut().insert(key.to_string(), bytes.to_vec()));
+        let started = DATABASE.with(|d| {
+            let d = d.borrow();
+            let Some(db) = d.as_ref() else {
+                return Ok(false);
+            };
+            super::request_persistence();
+            let tx = super::backups::write_transaction(db, STORE, key, Some(what), done)?;
+            let value = js_sys::Uint8Array::from(bytes);
+            tx.object_store(STORE)?
+                .put_with_key(&value, &JsValue::from_str(key))?;
+            super::backups::commit(&tx);
+            Ok::<bool, JsValue>(true)
+        });
+        match started {
+            Ok(started) => started,
+            Err(e) => {
+                crate::storage_full::report(what, super::quota_error(&e));
+                true
+            }
+        }
     }
 }
