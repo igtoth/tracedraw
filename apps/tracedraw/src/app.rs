@@ -10014,12 +10014,14 @@ mod tests {
         let mut back = App::headless();
         back.open_path(path);
         let lines: Vec<GuideLine> = back.page_guides().iter().map(|g| g.line).collect();
-        assert_eq!(
-            lines,
-            [
-                GuideLine::Horizontal { y: 40.0 },
-                GuideLine::Vertical { x: 25.0 }
-            ]
+        // The file keeps positions in its own units: within a micrometre.
+        assert!(
+            matches!(
+                lines.as_slice(),
+                [GuideLine::Horizontal { y }, GuideLine::Vertical { x }]
+                    if (y - 40.0).abs() < 1e-3 && (x - 25.0).abs() < 1e-3
+            ),
+            "{lines:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
