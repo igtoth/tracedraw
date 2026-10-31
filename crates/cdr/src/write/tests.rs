@@ -6654,3 +6654,216 @@ fn master_layer_objects_are_written_on_every_page_in_their_order() {
     // The drawing itself is left alone.
     assert_eq!(doc.master.len(), 2);
 }
+
+/// A paragraph text of two paragraphs and a blank line between them (a
+/// paragraph of no letters, as the files hold one) in a 70 x 30 mm
+/// frame, turned and moved.
+fn paragraph_shape(ids: &mut tracedraw_core::id::IdSource, para: ParagraphStyle) -> Shape {
+    let mut t = Shape::new(
+        ids.shape(),
+        ShapeKind::Text {
+            spans: vec![TextSpan::new(
+                "Paragraph text flows in its frame\n\nand keeps it",
+                "Arial",
+                12.0,
+            )],
+            origin: Point::new(5.0, -40.0),
+            frame: Some(Size::new(70.0, 30.0)),
+            align: TextAlign::Center,
+            para,
+            on_path: None,
+        },
+    );
+    t.transform = Affine::translate((40.0, 80.0)) * Affine::rotate(0.3);
+    t.fill = Fill::Solid(Color::BLACK);
+    t.stroke = None;
+    t
+}
+
+/// The first object's `loda` and `txsm` records of a written file.
+fn first_text_records(bytes: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    let (_, tree, riff) = chunk_ids(bytes);
+    let mut out = (None, None);
+    tree.root.walk(&mut |c, _| {
+        if c.is(b"txsm") && out.1.is_none() {
+            out.1 = Some(tree.data(&riff, c).to_vec());
+        }
+        if c.is(b"loda") && out.0.is_none() {
+            let d = tree.data(&riff, c);
+            if tracedraw_cdr_format::loda::table(d, 7).map(|t| t.kind) == Some(OBJ_PARAGRAPH_TEXT) {
+                out.0 = Some(d.to_vec());
+            }
+        }
+    });
+    (
+        out.0.expect("a paragraph text"),
+        out.1.expect("a text record"),
+    )
+}
+
+/// Paragraph text goes out as paragraph text (object type 6) with its
+/// frame in every version but 8, laid out as files of versions 7, 9 to
+/// 15, 19, 22 and 27 hold it, and comes back as paragraph text with the
+/// same frame in the same place (#1226; it went out as one artistic text
+/// per line, so the frame was lost in the other program and in TraceDraw).
+#[test]
+fn paragraph_text_goes_out_with_its_frame() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let t = paragraph_shape(&mut ids, ParagraphStyle::default());
+    let corners = t.text_frame_corners().expect("a frame");
+    let doc = doc_with(vec![t]);
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let findings = crate::check::check_bytes(&bytes).expect("checks");
+        assert!(findings.is_empty(), "{v}: {findings:?}");
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let shapes = &back.pages[0].layers[0].shapes;
+        if v == 8 {
+            // Lines of artistic text, as before.
+            assert!(
+                !matches!(shapes[0].kind, ShapeKind::Text { frame: Some(_), .. }),
+                "{v}: {:?}",
+                shapes[0].kind
+            );
+            continue;
+        }
+        assert_eq!(shapes.len(), 1, "{v}: {:?}", rep.warnings);
+        let s = &shapes[0];
+        let ShapeKind::Text {
+            spans,
+            frame: Some(f),
+            align,
+            ..
+        } = &s.kind
+        else {
+            panic!("{v}: {:?}", s.kind);
+        };
+        let text: String = spans.iter().map(|sp| sp.text.as_str()).collect();
+        assert_eq!(
+            text, "Paragraph text flows in its frame\n\nand keeps it",
+            "{v}"
+        );
+        assert_eq!(*align, TextAlign::Center, "{v}");
+        assert!(
+            (f.width - 70.0).abs() < 0.01 && (f.height - 30.0).abs() < 0.01,
+            "{v}: {f:?}"
+        );
+        let got = s.text_frame_corners().expect("a frame");
+        for (a, b) in got.iter().zip(&corners) {
+            assert!((*a - *b).hypot() < 0.01, "{v}: {got:?} for {corners:?}");
+        }
+        // The records as the files hold them.
+        let (loda, txsm) = first_text_records(&bytes);
+        let args = loda_args(&loda);
+        assert!(
+            args.iter().all(|(ty, _)| *ty != ARG_TEXT_LINK),
+            "{v}: paragraph text has no 16015"
+        );
+        let coords = &args.iter().find(|(ty, _)| *ty == ARG_COORDS).expect("30").1;
+        let i = |at: usize| i32::from_le_bytes(coords[at..at + 4].try_into().expect("4"));
+        assert_eq!(coords.len(), if v >= 9 { 92 } else { 88 }, "{v}");
+        assert_eq!(
+            (i(0), i(4), i(8), i(12), i(16)),
+            (0, 700000, 300000, 1, 1),
+            "{v}"
+        );
+        assert_eq!(i(if v >= 9 { 24 } else { 20 }), 700000, "{v}");
+        let u = |at: usize| i32::from_le_bytes(txsm[at..at + 4].try_into().expect("4"));
+        assert_eq!(u(0), 0, "{v}: the frame layout");
+        // After the frame's number and matrix (and the on-path flag).
+        let at = if v >= 16 {
+            36 + 2 + 3 + 4 + 4 + 48 + 4 + 8
+        } else {
+            36 + usize::from(v >= 15) + 4 + 4 + 48 + 4 + if v >= 15 { 12 } else { 0 }
+        };
+        if v >= 16 {
+            assert_eq!(
+                (u(at), u(at + 4), u(at + 8), u(at + 12)),
+                (0, -300000, 0, 700000),
+                "{v}"
+            );
+        } else {
+            let w = at + 8 + usize::from(v >= 8) * 2;
+            assert_eq!((u(at), u(at + 4)), (0, 1), "{v}");
+            assert_eq!((u(w), u(w + 4), u(w + 8)), (700000, 0, -300000), "{v}");
+        }
+    }
+}
+
+/// Columns go out in the frame's settings from version 16 and come back.
+#[test]
+fn paragraph_columns_round_trip_from_version_16() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let para = ParagraphStyle {
+        columns: 2,
+        gutter: 4.0,
+        ..ParagraphStyle::default()
+    };
+    let doc = doc_with(vec![paragraph_shape(&mut ids, para)]);
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let s = &back.pages[0].layers[0].shapes[0];
+        match (&s.kind, v >= 16) {
+            (ShapeKind::Text { para, frame, .. }, true) => {
+                assert!(frame.is_some(), "{v}");
+                assert_eq!(para.columns, 2, "{v}");
+                assert!((para.gutter - 4.0).abs() < 0.01, "{v}: {}", para.gutter);
+            }
+            // Before 16 such frames go out as lines.
+            (ShapeKind::Group { .. } | ShapeKind::Text { frame: None, .. }, false) => {}
+            (k, _) => panic!("{v}: {k:?}"),
+        }
+    }
+    assert_eq!(
+        frame_json(
+            Size::new(70.0, 30.0),
+            &ParagraphStyle {
+                columns: 2,
+                gutter: 4.0,
+                ..ParagraphStyle::default()
+            }
+        ),
+        r#"{"frame":{"columns":"330000,40000,330000,0","equalWidthColumns":"1","rtlColumns":"0","v_justify":"0"}}"#
+    );
+}
+
+/// Frames the files' paragraph text cannot hold as TraceDraw draws them
+/// (scaled, vertical, fitted to the frame, centred from top to bottom,
+/// linked) keep going out as one artistic text per line.
+#[test]
+fn paragraph_text_the_files_cannot_hold_goes_out_as_lines() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let mut scaled = paragraph_shape(&mut ids, ParagraphStyle::default());
+    scaled.transform *= Affine::scale(1.5);
+    let vertical = paragraph_shape(
+        &mut ids,
+        ParagraphStyle {
+            vertical: true,
+            ..ParagraphStyle::default()
+        },
+    );
+    let fitted = paragraph_shape(
+        &mut ids,
+        ParagraphStyle {
+            fit_to_frame: true,
+            ..ParagraphStyle::default()
+        },
+    );
+    let centred = paragraph_shape(
+        &mut ids,
+        ParagraphStyle {
+            vertical_align: tracedraw_core::VerticalAlign::Center,
+            ..ParagraphStyle::default()
+        },
+    );
+    let mut linked = paragraph_shape(&mut ids, ParagraphStyle::default());
+    linked.data.push(("text.next".into(), "99".into()));
+    for s in [scaled, vertical, fitted, centred, linked] {
+        let w = Writer::new(Ver(21), &[], "t");
+        assert!(!w.writes_frame(&s), "{:?}", s.kind);
+    }
+    let plain = paragraph_shape(&mut ids, ParagraphStyle::default());
+    assert!(Writer::new(Ver(21), &[], "t").writes_frame(&plain));
+    assert!(!Writer::new(Ver(8), &[], "t").writes_frame(&plain));
+}

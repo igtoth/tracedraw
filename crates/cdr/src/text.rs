@@ -832,6 +832,9 @@ pub(crate) struct Txsm {
     /// Version 16+ run records holding a style of their own while marked
     /// as applying none of its members (see `read_txsm_16`).
     pub inert_styles: usize,
+    /// The settings of the first paragraph frame (version 16+: the style
+    /// string of its frame record, holding its columns).
+    pub frame_style: Option<String>,
 }
 
 /// How a text fitted to a path sits on it: the 40 bytes after the
@@ -931,6 +934,7 @@ fn early_paragraphs(chars: &[u8], size_pt: Option<f64>) -> Txsm {
         path_settings: None,
         paragraphs,
         inert_styles: 0,
+        frame_style: None,
     }
 }
 
@@ -1068,6 +1072,7 @@ fn read_txsm_7_frames(
         path_settings: None,
         paragraphs: Vec::new(),
         inert_styles: 0,
+        frame_style: None,
     };
     for _ in 0..np {
         let style_id = r.u32()?;
@@ -1387,6 +1392,7 @@ fn read_txsm_16(d: &[u8], v: u16, charset: u8, warn: &mut dyn FnMut(String)) -> 
     }
     let mut any_on_path = false;
     let mut path_settings = None;
+    let mut frame_style = None;
     for _ in 0..nf {
         let _frame_id = r.u32()?;
         r.skip(48);
@@ -1400,9 +1406,13 @@ fn read_txsm_16(d: &[u8], v: u16, charset: u8, warn: &mut dyn FnMut(String)) -> 
         }
         r.skip(8);
         if !frame {
+            // 0, the frame's height (negative), 0, its width, then its
+            // settings (files of versions 19, 22 and 27).
             r.skip(16);
-            let len = r.u32()? as usize;
-            r.skip(if v >= 17 { len } else { len.saturating_mul(2) });
+            let style = read_style_string(&mut r, d, v, charset)?;
+            if frame_style.is_none() {
+                frame_style = Some(style);
+            }
         }
     }
     let np = r.u32()? as usize;
@@ -1414,6 +1424,7 @@ fn read_txsm_16(d: &[u8], v: u16, charset: u8, warn: &mut dyn FnMut(String)) -> 
         path_settings,
         paragraphs: Vec::new(),
         inert_styles: 0,
+        frame_style,
     };
     for _ in 0..np {
         let style_id = r.u32()?;
@@ -2081,6 +2092,35 @@ pub(crate) fn object_transparency_mask(style: &str) -> Option<(tracedraw_core::F
     crate::mirror_centred_stops(&mut fountain);
     let target = num(&tr, "appliesTo").unwrap_or(2.0).clamp(0.0, 2.0) as u8;
     Some((Fill::Fountain(fountain), target))
+}
+
+/// The columns of a paragraph frame from its version 16+ settings (the
+/// style string of its `txsm` frame record, or the object's): their
+/// number and the gap between the first two, in file units, when there
+/// are several. `columns` lists each column's width and the gap after it
+/// (`"197607,0"`: one column, in files of versions 19 to 27; several
+/// columns assumed listed alike, as TraceDraw writes them).
+pub(crate) fn frame_columns(style: &str) -> Option<(u32, f64)> {
+    let t = style.trim_matches(|c: char| c == '\0' || c.is_whitespace());
+    let Json::Obj(items) = parse_json(t)? else {
+        return None;
+    };
+    let Json::Obj(frame) = &items.iter().find(|(k, _)| k == "frame")?.1 else {
+        return None;
+    };
+    let Json::Str(cols) = &frame.iter().find(|(k, _)| k == "columns")?.1 else {
+        return None;
+    };
+    let v: Vec<f64> = cols
+        .split(',')
+        .map(|p| p.trim().parse::<f64>().ok())
+        .collect::<Option<Vec<f64>>>()?;
+    let n = v.len().div_ceil(2);
+    if !(2..=64).contains(&n) {
+        return None;
+    }
+    let gap = v.get(1).copied().filter(|g| g.is_finite() && *g >= 0.0)?;
+    Some((n as u32, gap))
 }
 
 /// The width of a paragraph frame from an object's version 16+ style

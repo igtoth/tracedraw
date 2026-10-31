@@ -14,7 +14,8 @@
 //!   unique among the objects that carry one, fill and outline ids unique
 //!   in their tables;
 //! - text: every text object has a `txsm` record with at least one
-//!   paragraph, and every paragraph and run holds at least one letter;
+//!   paragraph and one letter, and every run of a paragraph that is not
+//!   a blank line holds at least one letter;
 //!   a version 16+ run record with a style of its own marks it as
 //!   applying (#1297);
 //! - references: every fill id, outline id and style id an object or a
@@ -944,6 +945,19 @@ impl<'a> Checker<'a> {
                 ),
             );
         }
+        // A blank line is a paragraph of no letters, its record counting
+        // its end alone, as the program that wrote the samples writes one
+        // (a version 22 paragraph text "...SERVICIO.\n\nR.F.C. ..."); a text
+        // of no letters at all is a fault.
+        let all: usize = parsed
+            .paragraphs
+            .iter()
+            .flat_map(|p| &p.runs)
+            .map(|r| r.text.chars().count())
+            .sum();
+        if all == 0 && !parsed.paragraphs.is_empty() {
+            self.note(place, "text record without letters");
+        }
         for (i, p) in parsed.paragraphs.iter().enumerate() {
             if p.style_id != 0 && !self.styles.contains(&p.style_id) {
                 self.note(
@@ -959,7 +973,7 @@ impl<'a> Checker<'a> {
             }
             let letters: usize = p.runs.iter().map(|r| r.text.chars().count()).sum();
             if letters == 0 {
-                self.note(place, format!("paragraph {i} has no letters"));
+                continue;
             }
             for (k, r) in p.runs.iter().enumerate() {
                 if r.text.is_empty() {
@@ -1531,7 +1545,7 @@ mod tests {
         let f = findings(&[t]);
         assert!(
             f.iter()
-                .any(|f| f.contains("no letters") || f.contains("no runs")),
+                .any(|f| f.contains("without letters") || f.contains("no runs")),
             "{f:?}"
         );
         let mut t = text();

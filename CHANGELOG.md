@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Saving as `.cdr`: paragraph text is saved as paragraph text, its frame and the text flowing in it, as the other program's own files hold it (versions 7 and 9 to 27), and opens again as paragraph text in TraceDraw. It went out as one artistic text per line, so the frame was lost in the other program and when TraceDraw opened the file again. Frames those files cannot hold as TraceDraw draws them (scaled or slanted, vertical text, fit to frame, placed from the middle or bottom, linked frames, several columns before version 16, version 8) still go out as lines. Columns are kept from version 16 (#1226).
+
 ## 0.32.0 (2026-10-31)
 
 - Tracing: traces look like the picture with far fewer objects. On a sugar skull with sunflowers (halftone dots in the flowers' hearts, fine white hatching, a black outline drawing, a picture with wide transparent margins) the Clipart preset now gives 16 curves where it gave 31, and draws 7.3 % of the picture's pixels visibly wrong where it drew 10.6 %; High Quality Image gives 46 curves where it gave 94. Small dots and hatch ends that stand out from what is around them stay (every patch under the detail's speck size went to the colour around it, so halftones came out flat); the shades the colour reduction made of one colour's noise and of its edges join that colour, which keeps the art's exact value (the black came out in three shades and #0B0703, the white in seven); in art drawn in flat colours the palette comes from the flat colours, not from the anti-aliased pixels of the edges; and each colour is drawn whole under the colours over it, its holes filled, so a black outline drawing is one silhouette of 1 ring where it was 217, with no page showing between neighbours.

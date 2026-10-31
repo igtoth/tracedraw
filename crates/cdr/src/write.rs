@@ -28,13 +28,14 @@
 
 use crate::parse::{
     ARG_CLIP_CONTENTS, ARG_COORDS, ARG_FILL, ARG_NAME, ARG_OPACITY, ARG_OUTLINE, ARG_STYLE,
-    ARG_STYLE_STRING, OBJ_ARTISTIC_TEXT, OBJ_BITMAP, OBJ_CURVE, OBJ_ELLIPSE, OBJ_RECT,
+    ARG_STYLE_STRING, OBJ_ARTISTIC_TEXT, OBJ_BITMAP, OBJ_CURVE, OBJ_ELLIPSE, OBJ_PARAGRAPH_TEXT,
+    OBJ_RECT,
 };
 use std::collections::HashMap;
 use std::io::Write as _;
 use tracedraw_core::{
     document::{Shape, ShapeKind, Symbol, TextSpan},
-    geometry::{Affine, BezPath, PathEl, Point, Rect, Shape as _},
+    geometry::{Affine, BezPath, PathEl, Point, Rect, Shape as _, Size},
     style::{FountainKind, LineCap, LineJoin},
     Color, Document, Fill, Pattern, SharedBytes, Stroke, TextAlign,
 };
@@ -3016,7 +3017,7 @@ pub(crate) fn mark_node_types(types: &mut [u8]) {
 }
 
 /// The page box of `s` as a reader finds what it is written as: for
-/// paragraph text, which goes out as one artistic text a line, the box of
+/// paragraph text that goes out as one artistic text a line, the box of
 /// those lines (the frame's box is not in the file); else its own.
 fn drawn_bounds(s: &Shape) -> Rect {
     tracedraw_core::document::paragraph_lines(&s.kind)
@@ -3337,6 +3338,60 @@ fn justify_code(align: TextAlign) -> u32 {
         TextAlign::Justify => 4,
         TextAlign::ForceJustify => 5,
     }
+}
+
+/// The coordinates argument of paragraph text (object type 6) as the files
+/// of versions 7 to 27 hold it: 0, the frame's width and height, 1, 1,
+/// from version 9 a 0, the width again, then zeros (88 bytes in all
+/// before 9, 92 from 9; the files' last four bytes vary and are written
+/// as zeros).
+fn paragraph_coords(v: Ver, f: Size) -> Vec<u8> {
+    let (w, h) = (units(f.width), units(f.height));
+    let mut c = Buf::default();
+    c.i32(0).i32(w).i32(h).u32(1).u32(1);
+    if v.0 >= 9 {
+        c.u32(0);
+    }
+    c.i32(w);
+    c.pad_to(if v.0 >= 9 { 92 } else { 88 });
+    c.done()
+}
+
+/// The size record of a paragraph text frame in a `txsm` of versions 7
+/// to 15, after the frame's matrix (and, from 8, its on-path flag and,
+/// in 15, the 12 bytes after it), as the files hold it: 0, 1, (from 8 a
+/// u16 0), the width, 0, the height going down from the frame's top,
+/// then zeros: 36 bytes in 7, 34 from 8 to 13, 36 in 14 and 15.
+fn frame_record_7(n: u16, f: Size) -> Vec<u8> {
+    let mut r = Buf::default();
+    r.u32(0).u32(1);
+    if n >= 8 {
+        r.u16(0);
+    }
+    r.i32(units(f.width)).i32(0).i32(-units(f.height));
+    r.pad_to(if (8..14).contains(&n) { 34 } else { 36 });
+    r.done()
+}
+
+/// The settings of a paragraph frame (version 16+ `txsm` frame record):
+/// the columns, each one's width and the gap after it (the last one's 0,
+/// one column as wide as the frame in the files seen), equal columns,
+/// left to right, the text from the top (`v_justify` 0, the one value
+/// seen; `writes_frame` lets other vertical placings go out as lines).
+fn frame_json(f: Size, para: &tracedraw_core::ParagraphStyle) -> String {
+    let n = para.columns.max(1);
+    let gutter = if n > 1 { para.gutter.max(0.0) } else { 0.0 };
+    let width = ((f.width - gutter * f64::from(n - 1)) / f64::from(n)).max(0.0);
+    let columns: Vec<String> = (0..n)
+        .map(|k| {
+            let gap = if k + 1 < n { units(gutter) } else { 0 };
+            format!("{},{gap}", units(width))
+        })
+        .collect();
+    format!(
+        r#"{{"frame":{{"columns":"{}","equalWidthColumns":"1","rtlColumns":"0","v_justify":"0"}}}}"#,
+        columns.join(",")
+    )
 }
 
 // ---- the writer ----------------------------------------------------------
@@ -4511,16 +4566,20 @@ impl<'a> Writer<'a> {
                 json.push(',');
                 json.push_str(character);
                 json.push('}');
-                args.push((ARG_TEXT_LINK, 1u32.to_le_bytes().to_vec()));
+                // Paragraph text has none in any file.
+                if kind != OBJ_PARAGRAPH_TEXT {
+                    args.push((ARG_TEXT_LINK, 1u32.to_le_bytes().to_vec()));
+                }
             }
             let mut a = Buf::default();
             a.u32(1).bytes(&style_string(v, &json));
             args.push((ARG_STYLE_STRING, a.done()));
         } else {
-            // Text carries 1 in argument 16015 as from 16: every text
-            // object of the version 7 to 13 and 15 files seen (the version
-            // 14 files, which open, were written without it and stay so).
-            if text.is_some() && v.0 != 14 {
+            // Artistic text carries 1 in argument 16015 as from 16: every
+            // artistic text object of the version 7 to 13 and 15 files seen
+            // (the version 14 files, which open, were written without it
+            // and stay so); paragraph text has none in any version.
+            if text.is_some() && v.0 != 14 && kind != OBJ_PARAGRAPH_TEXT {
                 args.push((ARG_TEXT_LINK, 1u32.to_le_bytes().to_vec()));
             }
             // Text refers to the style of its alignment, as its paragraphs;
@@ -4676,10 +4735,17 @@ impl<'a> Writer<'a> {
                 ids.into_iter().collect::<Option<Vec<u32>>>(),
                 all.get(main_at),
             ) {
+                // Paragraph text written with its frame reads back as
+                // itself, other paragraph text as its lines.
+                let bounds = if self.writes_frame(main) {
+                    main.bounds()
+                } else {
+                    drawn_bounds(main)
+                };
                 self.effects.push(crate::kept_effects::Written {
                     objects,
                     main: main_at,
-                    bounds: drawn_bounds(main),
+                    bounds,
                     source: s.clone(),
                 });
             }
@@ -4791,12 +4857,20 @@ impl<'a> Writer<'a> {
             let shadow = self.shadow_picture(s);
             return self.drawn_as(s, all, main_at, shadow, centre, depth);
         }
-        // Paragraph text goes out as a group of artistic texts, one a line
-        // placed where its frame put it (frames are not written yet), so it
-        // keeps its look. Its effects and shadow were taken above, so the
-        // lines carry neither (a shadow written once per line and once for
-        // the text was the result before).
-        if let Some(kinds) = tracedraw_core::document::paragraph_lines(&s.kind) {
+        // Paragraph text goes out as paragraph text, its frame and the
+        // text flowing in it (#1226), when the files' paragraph text can
+        // hold it as TraceDraw draws it (see [`Self::writes_frame`]). Any
+        // other goes out as a group of artistic texts, one a line placed
+        // where its frame put it, so it keeps its look. Its effects and
+        // shadow were taken above, so the lines carry neither (a shadow
+        // written once per line and once for the text was the result
+        // before).
+        let lines = if self.writes_frame(s) {
+            None
+        } else {
+            tracedraw_core::document::paragraph_lines(&s.kind)
+        };
+        if let Some(kinds) = lines {
             let children: Vec<Shape> = kinds
                 .into_iter()
                 .map(|kind| Shape { kind, ..s.clone() })
@@ -4928,8 +5002,8 @@ impl<'a> Writer<'a> {
                 origin,
                 align,
                 para,
+                frame,
                 on_path: None,
-                ..
             } => {
                 // Each paragraph goes out with its own alignment (and line
                 // spacing from version 16); the object takes the first
@@ -4942,7 +5016,13 @@ impl<'a> Writer<'a> {
                     .copied()
                     .unwrap_or(own_align);
                 let align = &first_align;
-                let t = s.transform * Affine::translate(origin.to_vec2());
+                // A paragraph frame hangs from the object's (0, 0), its
+                // top left (`writes_frame` let only such frames through).
+                let frame = frame.filter(|_| self.writes_frame(s));
+                let t = match frame {
+                    Some(f) => s.transform * Affine::translate((origin.x, origin.y + f.height)),
+                    None => s.transform * Affine::translate(origin.to_vec2()),
+                };
                 self.has_text = true;
                 let record = if v.0 >= 16 {
                     self.txsm16(
@@ -4951,10 +5031,45 @@ impl<'a> Writer<'a> {
                         para,
                         &s.fill,
                         Affine::translate(-centre.to_vec2()) * t,
+                        frame,
                     )
                 } else {
-                    self.txsm7(spans, own_align, &s.fill)
+                    self.txsm7(spans, own_align, &s.fill, frame)
                 };
+                if let Some(f) = frame {
+                    // Its box on the page is the frame's, as files have it.
+                    let corners = [
+                        Point::new(0.0, 0.0),
+                        Point::new(f.width, 0.0),
+                        Point::new(0.0, -f.height),
+                        Point::new(f.width, -f.height),
+                    ]
+                    .map(|p| t * p);
+                    let page_box = corners
+                        .iter()
+                        .skip(1)
+                        .fold(Rect::from_points(corners[0], corners[0]), |r, p| {
+                            r.union_pt(*p)
+                        });
+                    let character = format!(
+                        r#"{},"frame":{{}},"paragraph":{{"justify":"{}"}}"#,
+                        spans
+                            .first()
+                            .map(|sp| character_json(sp, Some(sp.fill.as_ref().unwrap_or(&s.fill))))
+                            .unwrap_or_else(|| r#""character":{}"#.to_string()),
+                        justify_code(*align)
+                    );
+                    return self.place(
+                        s,
+                        OBJ_PARAGRAPH_TEXT,
+                        paragraph_coords(v, f),
+                        &s.fill,
+                        t,
+                        page_box,
+                        Some((record, character, style_for(*align))),
+                        centre,
+                    );
+                }
                 // The character settings of the first run, the width of
                 // the lines as the frame's one column (files give artistic
                 // text its line width there) and the alignment.
@@ -5015,6 +5130,49 @@ impl<'a> Writer<'a> {
                 )
             }
         }
+    }
+
+    /// Whether `s` goes out as paragraph text, its frame and the text
+    /// flowing in it, as the files of versions 7 and 9 to 27 hold it
+    /// (#1226): a frame of horizontal text placed by a transform that
+    /// neither scales nor slants (the other program's transform scales
+    /// the frame and not the letters, TraceDraw's both), from the top,
+    /// not fitted to the frame, not linked to other frames (each frame
+    /// would hold all the text) and, before 16, of one column. Version 8
+    /// is left out: its two layouts give frames of 32 and 34 bytes and no
+    /// file of the layout TraceDraw writes (800) holding one was seen.
+    /// The others go out as one artistic text per line.
+    fn writes_frame(&self, s: &Shape) -> bool {
+        let ShapeKind::Text {
+            frame: Some(f),
+            para,
+            on_path: None,
+            ..
+        } = &s.kind
+        else {
+            return false;
+        };
+        let n = self.v.0;
+        let [a, b, c, d, e, g] = s.transform.as_coeffs();
+        let rigid = [a, b, c, d, e, g].iter().all(|x| x.is_finite())
+            && (a.hypot(b) - 1.0).abs() < 1e-6
+            && (c.hypot(d) - 1.0).abs() < 1e-6
+            && (a * c + b * d).abs() < 1e-6;
+        let linked = s
+            .data
+            .iter()
+            .any(|(k, _)| k == "text.next" || k == "text.prev");
+        n != 8
+            && rigid
+            && !linked
+            && f.width > 1e-3
+            && f.height > 1e-3
+            && f.width.is_finite()
+            && f.height.is_finite()
+            && !para.vertical
+            && !para.fit_to_frame
+            && para.vertical_align == tracedraw_core::VerticalAlign::Top
+            && (para.columns <= 1 || n >= 16)
     }
 
     /// Paragraphs of the text: the runs between line breaks, each run with
@@ -5094,7 +5252,13 @@ impl<'a> Writer<'a> {
         GRAPHIC_STYLE_ID + 1 + i as u32
     }
 
-    fn txsm7(&mut self, spans: &[TextSpan], align: TextAlign, fill: &Fill) -> Vec<u8> {
+    fn txsm7(
+        &mut self,
+        spans: &[TextSpan],
+        align: TextAlign,
+        fill: &Fill,
+        frame: Option<Size>,
+    ) -> Vec<u8> {
         let v = self.v;
         let n = v.0;
         // As files of versions 7 to 15 hold artistic text: -1, -1, 0, -1,
@@ -5113,8 +5277,9 @@ impl<'a> Writer<'a> {
             14 => 9,
             _ => 11,
         };
+        // Paragraph text starts with 0 (its frames hold their size).
         let mut t = Buf::default();
-        t.u32(u32::MAX)
+        t.u32(if frame.is_some() { 0 } else { u32::MAX })
             .u32(u32::MAX)
             .u32(0)
             .u32(u32::MAX)
@@ -5141,6 +5306,9 @@ impl<'a> Writer<'a> {
                 t.zeros(8 + 4);
             }
         }
+        if let Some(f) = frame {
+            t.bytes(&frame_record_7(n, f));
+        }
         let paragraphs = Self::paragraphs(spans);
         t.u32(paragraphs.len() as u32);
         let aligns = paragraph_aligns(spans, align);
@@ -5165,7 +5333,9 @@ impl<'a> Writer<'a> {
             };
             let style_id = self.text_style(base);
             t.u32(style_id).zeros(1);
-            if n >= 13 {
+            // From 13 artistic text has one more byte; paragraph text
+            // not (the files of 13 to 15).
+            if n >= 13 && frame.is_none() {
                 t.zeros(1);
             }
             // The records: before 14 one per distinct look of the paragraph
@@ -5304,10 +5474,13 @@ impl<'a> Writer<'a> {
         para: &tracedraw_core::ParagraphStyle,
         fill: &Fill,
         m: Affine,
+        frame: Option<Size>,
     ) -> Vec<u8> {
         let v = self.v;
         let mut t = Buf::default();
-        t.u32(u32::MAX)
+        // Paragraph text starts with 0: its frames hold their size and
+        // its paragraphs no flag byte.
+        t.u32(if frame.is_some() { 0 } else { u32::MAX })
             .u32(u32::MAX)
             .u32(0)
             .u32(u32::MAX)
@@ -5338,6 +5511,16 @@ impl<'a> Writer<'a> {
             t.f64(if x.is_finite() { x } else { 0.0 });
         }
         t.u32(0).zeros(8);
+        if let Some(f) = frame {
+            // The frame as files of versions 19, 22 and 27 hold it: 0,
+            // its height going down from its top, 0, its width, then its
+            // settings (the columns) as a style string.
+            t.i32(0)
+                .i32(-units(f.height))
+                .i32(0)
+                .i32(units(f.width))
+                .bytes(&style_string(v, &frame_json(f, para)));
+        }
         let paragraphs = Self::paragraphs(spans);
         t.u32(paragraphs.len() as u32);
         let formats = tracedraw_core::paragraphs::paragraph_formats_of(spans, align, para);
@@ -5362,10 +5545,11 @@ impl<'a> Writer<'a> {
             // paragraph of one run keeps its colour only here (#1057).
             let first_fill = first.and_then(|sp| sp.fill.as_ref()).unwrap_or(fill);
             let default = full_text_style(first, Some(first_fill), align, leading);
-            t.u32(style_for(align))
-                .zeros(1)
-                .u8(0)
-                .bytes(&style_string(v, &default));
+            t.u32(style_for(align)).zeros(1);
+            if frame.is_none() {
+                t.u8(0);
+            }
+            t.bytes(&style_string(v, &default));
             // The records, a table of the paragraph's looks as the files
             // of the program that reads them hold it: first the plain
             // record, for the letters in the paragraph's own style, with
