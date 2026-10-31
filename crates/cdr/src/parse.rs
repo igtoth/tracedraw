@@ -2325,7 +2325,7 @@ impl<'a> Ctx<'a> {
     ///   draws each as a straight line between the two points;
     /// - a list of points: u16 count, u32 1, the points (coordinates), then
     ///   a u32 for each point (0 or 1), 6 + 12 bytes a point in all. Seen
-    ///   as the frames of PowerClips, closed outlines of some hundred
+    ///   as the outlines of clip frames, closed outlines of some hundred
     ///   points whose last point lies a step from the first; the preview
     ///   clips the contents to the outline through the points.
     fn read_connector(&mut self, oc: &Chunk) -> Option<ShapeKind> {

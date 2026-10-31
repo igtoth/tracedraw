@@ -130,6 +130,49 @@ pub fn fonts() -> &'static FontSystem {
     SYSTEM.get_or_init(FontSystem::load)
 }
 
+/// Whether the font system has started: [`fonts`] then answers at once.
+/// Reading the system fonts can take minutes (thousands of font files,
+/// a slow or cold disk), so a window asks this before it calls [`fonts`]
+/// and keeps drawing meanwhile.
+pub fn fonts_loaded() -> bool {
+    SYSTEM.get().is_some()
+}
+
+/// Start reading the system fonts on a worker thread (once; later calls
+/// do nothing). True when the fonts are read or being read, so that
+/// [`fonts_loaded`] turns true without anyone calling [`fonts`]; false
+/// when no thread could be made (the browser has none).
+pub fn load_in_background() -> bool {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static STARTED: AtomicBool = AtomicBool::new(false);
+    if fonts_loaded() || STARTED.load(Ordering::SeqCst) {
+        return true;
+    }
+    if cfg!(target_arch = "wasm32") {
+        return false;
+    }
+    if STARTED.swap(true, Ordering::SeqCst) {
+        return true;
+    }
+    match std::thread::Builder::new()
+        .name("tracedraw-font-scan".into())
+        .spawn(|| {
+            let started = std::time::Instant::now();
+            fonts();
+            log::info!(
+                "system fonts read in {:.0} ms",
+                started.elapsed().as_secs_f64() * 1000.0
+            );
+        }) {
+        Ok(_) => true,
+        Err(e) => {
+            log::warn!("font scan thread: {e}");
+            STARTED.store(false, Ordering::SeqCst);
+            false
+        }
+    }
+}
+
 /// Families that stand in for `family` when it is not installed, best
 /// first: fonts drawn to the same widths (so text keeps its line breaks:
 /// Liberation, Arimo, Tinos and Cousine for the common office faces,

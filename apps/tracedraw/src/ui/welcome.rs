@@ -204,7 +204,9 @@ fn recent_row(app: &mut App, ui: &mut Ui, path: &std::path::Path) -> RecentActio
     const ROW: egui::Vec2 = egui::vec2(380.0, 56.0);
     const THUMB: egui::Vec2 = egui::vec2(64.0, 48.0);
     const X: f32 = 20.0;
-    let exists = crate::files::exists(path);
+    // Asked of the disk on a worker thread: a drawing on a share that does
+    // not answer never holds the window (#1388).
+    let exists = crate::file_presence::exists(path, Some(ui.ctx()));
     let thumb = if exists {
         app.recent_thumbnail(ui.ctx(), path)
     } else {

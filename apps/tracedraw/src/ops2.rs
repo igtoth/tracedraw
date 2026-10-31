@@ -130,8 +130,16 @@ impl App {
     /// The bounds of everything drawn on the current page (its layers'
     /// objects, effects included), page mm.
     pub fn drawing_bounds(&self) -> Option<tracedraw_core::geometry::Rect> {
+        self.page_drawing_bounds(self.page)
+    }
+
+    /// As [`Self::drawing_bounds`], for the page `page`.
+    pub fn page_drawing_bounds(
+        &self,
+        page: tracedraw_core::PageId,
+    ) -> Option<tracedraw_core::geometry::Rect> {
         let doc = self.doc();
-        let page = doc.page(self.page).ok()?;
+        let page = doc.page(page).ok()?;
         page.layers
             .iter()
             .flat_map(|l| l.shapes.iter())
@@ -146,7 +154,7 @@ impl App {
     /// step. Nothing happens without a selection.
     pub fn fit_page_to_selection(&mut self) {
         if let Some(b) = self.selection_bounds() {
-            self.fit_page_to(b, "Fit Page to Selection");
+            self.fit_pages_to(&[(self.page, b)], "Fit Page to Selection");
         }
     }
 
@@ -175,44 +183,84 @@ impl App {
     /// The property bar's Autofit Page: [`Self::fit_page_to_drawing`]
     /// with `margin` mm left free around the drawing on every side.
     pub fn fit_page_to_drawing_with_margin(&mut self, margin: f64) {
+        self.autofit_pages(margin, false);
+    }
+
+    /// The property bar's Autofit Page with the page bar's scope: the
+    /// current page, or with All Pages on every page, each fitted to its
+    /// own drawing with `margin` mm around it (#1393). Pages with nothing
+    /// drawn keep their size. One undo step.
+    pub fn autofit_pages(&mut self, margin: f64, all: bool) {
         let margin = if margin.is_finite() {
             margin.max(0.0)
         } else {
             0.0
         };
-        if let Some(b) = self.drawing_bounds() {
-            self.fit_page_to(b.inflate(margin, margin), "Fit Page to Drawing");
-        }
-    }
-
-    fn fit_page_to(&mut self, b: tracedraw_core::geometry::Rect, label: &'static str) {
-        use tracedraw_core::geometry::{Affine, Size, Vec2};
-        if !(b.width().is_finite() && b.height().is_finite()) || b.width() < 0.1 || b.height() < 0.1
-        {
-            self.status = crate::i18n::tr("status.fit_page_nothing");
+        let pages: Vec<tracedraw_core::PageId> = if all {
+            self.doc().pages.iter().map(|p| p.id).collect()
+        } else {
+            vec![self.page]
+        };
+        let fits: Vec<_> = pages
+            .into_iter()
+            .filter_map(|p| {
+                self.page_drawing_bounds(p)
+                    .map(|b| (p, b.inflate(margin, margin)))
+            })
+            .collect();
+        if fits.is_empty() {
+            if all {
+                self.status = crate::i18n::tr("status.fit_page_nothing");
+            }
             return;
         }
-        let page = self.page;
-        let shapes: Vec<ShapeId> = self
-            .doc()
-            .page(page)
-            .map(|p| {
-                p.layers
-                    .iter()
-                    .flat_map(|l| l.shapes.iter().map(|s| s.id))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let mut cmds = vec![Command::ResizePage {
-            page,
-            size: Size::new(b.width(), b.height()),
-        }];
-        let shift = Vec2::new(-b.x0, -b.y0);
-        if shift.hypot() > 1e-9 && !shapes.is_empty() {
-            cmds.push(Command::TransformShapes {
-                shapes,
-                transform: Affine::translate(shift),
+        self.fit_pages_to(&fits, "Fit Page to Drawing");
+    }
+
+    /// Size each page to its rectangle and move the page's objects so the
+    /// rectangle's bottom-left corner is the page's; one undo step for
+    /// all of them. A page whose rectangle is empty or not a number keeps
+    /// its size; when every one is, nothing happens and the status says
+    /// so.
+    fn fit_pages_to(
+        &mut self,
+        fits: &[(tracedraw_core::PageId, tracedraw_core::geometry::Rect)],
+        label: &'static str,
+    ) {
+        use tracedraw_core::geometry::{Affine, Size, Vec2};
+        let mut cmds = Vec::new();
+        for &(page, b) in fits {
+            if !(b.width().is_finite() && b.height().is_finite())
+                || b.width() < 0.1
+                || b.height() < 0.1
+            {
+                continue;
+            }
+            let shapes: Vec<ShapeId> = self
+                .doc()
+                .page(page)
+                .map(|p| {
+                    p.layers
+                        .iter()
+                        .flat_map(|l| l.shapes.iter().map(|s| s.id))
+                        .collect()
+                })
+                .unwrap_or_default();
+            cmds.push(Command::ResizePage {
+                page,
+                size: Size::new(b.width(), b.height()),
             });
+            let shift = Vec2::new(-b.x0, -b.y0);
+            if shift.hypot() > 1e-9 && !shapes.is_empty() {
+                cmds.push(Command::TransformShapes {
+                    shapes,
+                    transform: Affine::translate(shift),
+                });
+            }
+        }
+        if cmds.is_empty() {
+            self.status = crate::i18n::tr("status.fit_page_nothing");
+            return;
         }
         if let Err(e) = self.engine.run_batch(label, &cmds) {
             self.status = e.to_string();
@@ -5145,6 +5193,89 @@ mod fit_page_tests {
         let before = app.engine.history_labels().0.len();
         app.fit_page_to_selection();
         assert_eq!(app.engine.history_labels().0.len(), before);
+    }
+
+    /// Autofit Page with All Pages on fits every page to its own drawing,
+    /// not only the current one, in one undo step; a page with nothing on
+    /// it keeps its size. With Current Page on only the current page
+    /// changes (#1393).
+    #[test]
+    fn autofit_with_all_pages_fits_every_page() {
+        let mut app = App::headless();
+        let first = app.page;
+        let a = rect(&mut app, Rect::new(30.0, 40.0, 80.0, 90.0));
+        app.add_page();
+        let second = app.page;
+        let b = rect(&mut app, Rect::new(10.0, 20.0, 110.0, 50.0));
+        app.add_page();
+        let empty = app.page;
+        app.goto_page(1);
+        assert_eq!(app.page, second);
+        let size = |app: &App, p| app.doc().page(p).expect("page").size;
+        let bounds = |app: &App, id| app.doc().shape_on_page(id).expect("shape").bounds();
+        let empty_size = size(&app, empty);
+        let close = |s: tracedraw_core::geometry::Size, w: f64, h: f64| {
+            (s.width - w).abs() < 1e-9 && (s.height - h).abs() < 1e-9
+        };
+
+        // Current page only: the first page keeps its A4 size.
+        let depth = app.engine.history_labels().0.len();
+        app.autofit_pages(2.0, false);
+        assert!(
+            close(size(&app, second), 104.0, 34.0),
+            "{:?}",
+            size(&app, second)
+        );
+        assert!(close(
+            size(&app, first),
+            empty_size.width,
+            empty_size.height
+        ));
+        assert_eq!(app.engine.history_labels().0.len(), depth + 1);
+        app.undo();
+
+        // All pages: each page takes its own drawing's size plus the
+        // margin and its objects move in by the margin.
+        app.autofit_pages(2.0, true);
+        assert!(
+            close(size(&app, first), 54.0, 54.0),
+            "{:?}",
+            size(&app, first)
+        );
+        assert!(
+            close(size(&app, second), 104.0, 34.0),
+            "{:?}",
+            size(&app, second)
+        );
+        assert!(close(
+            size(&app, empty),
+            empty_size.width,
+            empty_size.height
+        ));
+        for id in [a, b] {
+            let r = bounds(&app, id);
+            assert!(
+                (r.x0 - 2.0).abs() < 1e-9 && (r.y0 - 2.0).abs() < 1e-9,
+                "{r:?}"
+            );
+        }
+        assert_eq!(app.engine.history_labels().0.len(), depth + 1, "one step");
+        app.undo();
+        assert!(close(
+            size(&app, first),
+            empty_size.width,
+            empty_size.height
+        ));
+        assert!((bounds(&app, a).x0 - 30.0).abs() < 1e-9);
+        assert!((bounds(&app, b).x0 - 10.0).abs() < 1e-9);
+
+        // Nothing drawn on any page: no step, and the status says so.
+        let mut app = App::headless();
+        app.add_page();
+        let depth = app.engine.history_labels().0.len();
+        app.autofit_pages(0.0, true);
+        assert_eq!(app.engine.history_labels().0.len(), depth);
+        assert_eq!(app.status, crate::i18n::tr("status.fit_page_nothing"));
     }
 }
 
