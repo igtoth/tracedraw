@@ -383,7 +383,9 @@ pub fn glyphs(app: &mut App, ui: &mut Ui) {
     // its previews (#447).
     let current = app.glyph_font.clone();
     let width = ui.available_width() - 8.0;
-    let (pick, _) = crate::ui::font_list::font_list_live(app, ui, "glyphs_font", &current, width);
+    let (pick, _) = crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("toolbar.font"), |ui| {
+        crate::ui::font_list::font_list_live(app, ui, "glyphs_font", &current, width)
+    });
     if let Some(p) = pick {
         app.glyph_font = p.family;
     }
@@ -394,12 +396,15 @@ pub fn glyphs(app: &mut App, ui: &mut Ui) {
             for (i, (key, _)) in RANGES.iter().enumerate() {
                 ui.selectable_value(&mut app.glyph_range, i, tr(key));
             }
-        });
+        })
+        .response
+        .rich_tip(tr(RANGES[app.glyph_range.min(RANGES.len() - 1)].0));
     ui.add(
         egui::TextEdit::singleline(&mut app.glyph_search)
             .hint_text(tr("glyphs.search_hint"))
             .desired_width(ui.available_width() - 8.0),
-    );
+    )
+    .rich_tip(tr("glyphs.search_hint"));
     ui.add_space(4.0);
     let family = app.glyph_font.clone();
     let chars = search(
