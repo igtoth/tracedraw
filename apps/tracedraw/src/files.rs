@@ -139,6 +139,28 @@ pub fn name_with_extension(name: &str, mime: &str) -> String {
     format!("{name}.{ext}")
 }
 
+/// `name` as one file name of its own inside a folder: no folder
+/// separators or control characters, no leading dots (nothing hidden, no
+/// `..`), never empty.
+pub fn safe_file_name(name: &str) -> String {
+    let clean: String = name
+        .chars()
+        .map(|c| {
+            if matches!(c, '/' | '\\') || c.is_control() {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let clean = clean.trim().trim_start_matches('.').trim();
+    if clean.is_empty() {
+        "file".into()
+    } else {
+        clean.to_string()
+    }
+}
+
 /// The MIME type the system's save picker is told for a file with the
 /// extension `ext` (any case); a plain byte stream for the formats it
 /// does not know, which keeps the name as typed.

@@ -69,6 +69,11 @@ pub struct FontSystem {
     /// Manager): a font file under one of them counts as in that folder,
     /// not in the subfolder it lies in (#867). See [`FontSystem::folder_of`].
     roots: RwLock<Vec<std::path::PathBuf>>,
+    /// Faces loaded from memory under a name the application keeps them
+    /// by (the fonts a browser stores for TraceDraw, #1400), which the
+    /// catalog lists as their path and [`FontSystem::uninstall_path`]
+    /// takes out. See [`FontSystem::install_named`].
+    named: RwLock<Vec<(fontdb::ID, std::path::PathBuf)>>,
 }
 
 /// Register this engine as the core's text outliner (call once at startup).
@@ -1642,6 +1647,7 @@ impl FontSystem {
             legacy: RwLock::new(legacy),
             chosen: RwLock::new(HashMap::new()),
             roots: RwLock::new(Vec::new()),
+            named: RwLock::new(Vec::new()),
         }
     }
 

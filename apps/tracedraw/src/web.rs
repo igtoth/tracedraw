@@ -580,6 +580,8 @@ pub fn start() {
     eframe::WebLogger::init(log::LevelFilter::Info).ok();
     backups::install();
     kept::install();
+    // The fonts added in the Font Manager at earlier visits (#1400).
+    stored_fonts::load();
     guard_shortcuts();
     watch_chorded_right_press();
     watch_pasted_files();
@@ -1128,5 +1130,105 @@ pub mod kept {
                 true
             }
         }
+    }
+}
+
+/// The fonts added in the Font Manager (#1400), kept in the page's
+/// IndexedDB (database `tracedraw-fonts`, store `fonts`, keyed by the name
+/// `/fonts/<file name>` the font list knows them by), so they are there
+/// again at the next visit: read and installed when the page opens.
+pub mod stored_fonts {
+    use std::cell::RefCell;
+    use std::path::{Path, PathBuf};
+    use wasm_bindgen::JsValue;
+
+    const DATABASE_NAME: &str = "tracedraw-fonts";
+    const STORE: &str = "fonts";
+
+    thread_local! {
+        static DATABASE: RefCell<Option<web_sys::IdbDatabase>> = const { RefCell::new(None) };
+        /// The names of the fonts read back and installed, for the app.
+        static ARRIVED: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
+    }
+
+    /// The database, opened the first time it is needed.
+    async fn database() -> Result<web_sys::IdbDatabase, JsValue> {
+        if let Some(db) = DATABASE.with(|d| d.borrow().clone()) {
+            return Ok(db);
+        }
+        let db = super::backups::open(DATABASE_NAME, STORE).await?;
+        DATABASE.with(|d| *d.borrow_mut() = Some(db.clone()));
+        Ok(db)
+    }
+
+    /// Read the stored fonts and install them; the app takes their names
+    /// with [`take_arrived`] and the font lists follow the fonts'
+    /// generation.
+    pub fn load() {
+        wasm_bindgen_futures::spawn_local(async {
+            let all = match database().await {
+                Ok(db) => super::backups::read_all(&db, STORE).await,
+                Err(e) => Err(e),
+            };
+            match all {
+                Ok(all) if !all.is_empty() => {
+                    let names: Vec<PathBuf> = all.iter().map(|(n, _)| n.clone()).collect();
+                    let added = tracedraw_text::fonts().install_named(all);
+                    log::info!("stored fonts: {}", added.join(", "));
+                    ARRIVED.with(|a| a.borrow_mut().extend(names));
+                    super::request_repaint();
+                }
+                Ok(_) => {}
+                Err(e) => log::warn!("no stored fonts in this browser: {e:?}"),
+            }
+        });
+    }
+
+    /// The names of the fonts read back since the last call.
+    pub fn take_arrived() -> Vec<PathBuf> {
+        ARRIVED.with(|a| std::mem::take(&mut *a.borrow_mut()))
+    }
+
+    /// Run `f` on the store in a read-write transaction.
+    async fn in_store(
+        f: impl FnOnce(&web_sys::IdbObjectStore) -> Result<(), JsValue>,
+    ) -> Result<(), JsValue> {
+        let db = database().await?;
+        let tx = db.transaction_with_str_and_mode(STORE, web_sys::IdbTransactionMode::Readwrite)?;
+        f(&tx.object_store(STORE)?)?;
+        super::backups::commit(&tx);
+        Ok(())
+    }
+
+    /// [`in_store`] in the background; a failure is logged.
+    fn write(
+        what: String,
+        f: impl FnOnce(&web_sys::IdbObjectStore) -> Result<(), JsValue> + 'static,
+    ) {
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Err(e) = in_store(f).await {
+                log::warn!("the browser did not keep the font {what}: {e:?}");
+            }
+        });
+    }
+
+    /// Keep the font `bytes` under `name`.
+    pub fn save(name: &Path, bytes: Vec<u8>) {
+        let key = name.display().to_string();
+        super::request_persistence();
+        write(key.clone(), move |store| {
+            let value = js_sys::Uint8Array::from(bytes.as_slice());
+            store
+                .put_with_key(&value, &JsValue::from_str(&key))
+                .map(|_| ())
+        });
+    }
+
+    /// Forget the font kept under `name`.
+    pub fn remove(name: &Path) {
+        let key = name.display().to_string();
+        write(key.clone(), move |store| {
+            store.delete(&JsValue::from_str(&key)).map(|_| ())
+        });
     }
 }
