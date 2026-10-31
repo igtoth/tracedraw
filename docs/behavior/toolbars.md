@@ -87,7 +87,17 @@ a click lower on the tab brings the panel to the front
   its column has nothing to stand beside and stays. The column rects are
   recorded each frame by the window layout (`dockers::DOCKER_COLUMNS`,
   like `bars::DRAWING_ROOM`), so the targets cost nothing while
-  dragging. The tab's menu and the title's menu (right click) have Dock
+  dragging. Over a column's tab strip (the part of it on screen) the
+  band gives way to a line between the two tabs the panel would go
+  between, and the release puts the panel's tab there: within its own
+  column the tabs change order and the column keeps the panel it has in
+  front and whether it is open; from elsewhere the panel joins that
+  column at that place, in front (`App::insert_docker`, #1051). Each
+  strip records where its tabs lie each frame
+  (`dockers::StripLayout`), so the line costs nothing while dragging.
+  A panel alone in a side's edge column dropped among the second
+  column's tabs makes one column of them. The tab's menu and the
+  title's menu (right click) have Dock
   at Right, Dock at Right, Second Column, Dock at Left, Dock at Left,
   Second Column, Floating and Close panel (a Second Column entry is grey
   while the column at that side's edge holds no other panel).
@@ -110,6 +120,8 @@ a click lower on the tab brings the panel to the front
 - Checks: `app::tests::dockers_move_between_the_columns_and_float`,
   `app::tests::a_side_holds_a_second_docker_column`,
   `ui::dockers::tests::a_docker_dropped_beside_a_column_makes_a_second_column`,
+  `app::tests::insert_docker_puts_a_tab_among_a_columns_tabs`,
+  `ui::dockers::tests::a_docker_tab_dragged_along_its_column_changes_the_order`,
   `ui::dockers::tests::a_docker_dragged_to_a_side_docks_there_and_the_window_draws_them_all`.
 
 ## Standard toolbar

@@ -3855,6 +3855,51 @@ impl App {
         self.settle_columns();
     }
 
+    /// Put `tab` in the column at `place` at `index` among the column's
+    /// other tabs (#1051). Moved within its own column it keeps the
+    /// column's front tab and whether it is open; from elsewhere it comes
+    /// to the front of the column, as with [`App::move_docker`]. A docker
+    /// that was alone in a side's edge column and goes to the side's
+    /// second column joins that column's tabs, which then become the edge
+    /// column's (`settle_columns`).
+    pub fn insert_docker(&mut self, tab: DockerTab, place: DockerPlace, index: usize) {
+        if place == DockerPlace::Floating {
+            self.move_docker(tab, place, None);
+            return;
+        }
+        if self.docker_place(tab) == Some(place) {
+            if let Some(tabs) = self.column_tabs_mut(place) {
+                tabs.retain(|t| *t != tab);
+                tabs.insert(index.min(tabs.len()), tab);
+            }
+            return;
+        }
+        // The tabs it goes among; leaving its own column may move them
+        // to the side's edge column.
+        let among: Vec<DockerTab> = self.docker_column(place).0.to_vec();
+        self.take_docker(tab);
+        let Some(dest) = among.first().and_then(|t| self.docker_place(*t)) else {
+            self.move_docker(tab, place, None);
+            return;
+        };
+        if let Some(tabs) = self.column_tabs_mut(dest) {
+            tabs.insert(index.min(tabs.len()), tab);
+        }
+        self.set_docker_column(dest, true, Some(tab));
+    }
+
+    /// The tabs of the column at `place`, in order (none for floating).
+    fn column_tabs_mut(&mut self, place: DockerPlace) -> Option<&mut Vec<DockerTab>> {
+        match place {
+            DockerPlace::Right => Some(&mut self.open_dockers),
+            DockerPlace::Left => Some(&mut self.left_dockers),
+            DockerPlace::RightInner | DockerPlace::LeftInner => {
+                self.inner_column_mut(place).map(|c| &mut c.tabs)
+            }
+            DockerPlace::Floating => None,
+        }
+    }
+
     /// Take `tab` out of wherever it is, the column it leaves showing the
     /// tab next to it (or closing when none is left).
     fn take_docker(&mut self, tab: DockerTab) {
@@ -8840,6 +8885,59 @@ mod tests {
     /// edge and the drawing: dockers move into it and out, it never
     /// stands alone (its dockers join the edge column when that one
     /// empties), and it comes back from the preferences.
+    /// A tab dropped among a column's tabs goes at that place: within its
+    /// own column the column keeps its front tab and whether it is open;
+    /// from another column (a second column included) it comes to the
+    /// front there; a docker alone in a side's edge column dropped among
+    /// the second column's tabs makes one column of them (#1051).
+    #[test]
+    fn insert_docker_puts_a_tab_among_a_columns_tabs() {
+        use DockerTab::*;
+        let mut app = App::headless();
+        assert_eq!(app.open_dockers, [Hints, Properties, Objects]);
+        app.set_docker_column(DockerPlace::Right, false, Some(Objects));
+        app.insert_docker(Properties, DockerPlace::Right, 0);
+        assert_eq!(app.open_dockers, [Properties, Hints, Objects]);
+        assert_eq!((app.docker_tab, app.show_dockers), (Objects, false));
+        app.insert_docker(Properties, DockerPlace::Right, 99);
+        assert_eq!(app.open_dockers, [Hints, Objects, Properties]);
+        // Into a second column, between its two tabs.
+        app.move_docker(Transformations, DockerPlace::RightInner, None);
+        app.move_docker(Undo, DockerPlace::RightInner, None);
+        app.insert_docker(Hints, DockerPlace::RightInner, 1);
+        assert_eq!(app.inner_dockers.tabs, [Transformations, Hints, Undo]);
+        assert_eq!(app.open_dockers, [Objects, Properties]);
+        assert!(app.inner_dockers.shown && app.inner_dockers.front == Hints);
+        // Reordered inside the second column, the front stays.
+        app.insert_docker(Undo, DockerPlace::RightInner, 0);
+        assert_eq!(app.inner_dockers.tabs, [Undo, Transformations, Hints]);
+        assert_eq!(app.inner_dockers.front, Hints);
+        // The edge column's last docker dropped among the second
+        // column's tabs: one column, at the edge.
+        app.insert_docker(Objects, DockerPlace::RightInner, 3);
+        assert_eq!(app.open_dockers, [Properties]);
+        app.insert_docker(Properties, DockerPlace::RightInner, 2);
+        assert!(app.inner_dockers.tabs.is_empty());
+        assert_eq!(
+            app.open_dockers,
+            [Undo, Transformations, Properties, Hints, Objects]
+        );
+        // Whatever the drop, the tab is in one column exactly once.
+        let n = app
+            .open_dockers
+            .iter()
+            .filter(|t| **t == Properties)
+            .count();
+        assert_eq!(n, 1);
+        assert_eq!(app.docker_tab, Properties);
+        // A floating docker dropped on the left column's tabs joins it.
+        app.move_docker(Shaping, DockerPlace::Floating, None);
+        app.move_docker(Undo, DockerPlace::Left, None);
+        app.insert_docker(Shaping, DockerPlace::Left, 0);
+        assert_eq!(app.left_dockers, [Shaping, Undo]);
+        assert!(app.floating_dockers.is_empty());
+    }
+
     #[test]
     fn a_side_holds_a_second_docker_column() {
         let mut app = App::headless();
