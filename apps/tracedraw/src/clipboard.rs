@@ -820,7 +820,8 @@ impl App {
     }
 
     /// Bitmaps > Edit Bitmap: write the pixels to a PNG next to the system's
-    /// temporary files, link the object to it and open the system editor.
+    /// temporary files, link the object to it and open the system editor
+    /// (on Android, an editing app through "open with").
     pub fn edit_bitmap_externally(&mut self) {
         if crate::files::WEB {
             // A browser cannot hand a file to another program.
@@ -850,7 +851,18 @@ impl App {
         data.retain(|(k, _)| k != "bitmap.link");
         data.push(("bitmap.link".into(), path.display().to_string()));
         self.run(Command::SetObjectData { shape: id, data });
-        #[cfg(not(target_arch = "wasm32"))]
+        // Android hands the picture to an editing app the user picks, with
+        // the right to write it back (#1398); the file's watch reads it
+        // again when it does.
+        #[cfg(target_os = "android")]
+        {
+            self.status = if crate::android::outside::edit(&path, "image/png") {
+                tr("status.bitmap_sent_to_app")
+            } else {
+                tr("status.no_app_edits_pictures")
+            };
+        }
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
         match crate::export::open_in_editor(&self.settings.bitmap_editor, &path) {
             Ok(()) => self.status = tr("status.bitmap_sent_to_editor"),
             Err(e) => self.status = e,

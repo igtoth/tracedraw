@@ -2,14 +2,16 @@
 // NativeActivity, which loads libtracedraw.so and hands it the window and
 // the input, plus the few things the editor can only do from Java: the
 // system document picker (Storage Access Framework), reading and writing
-// the documents it returns, the system clipboard, and an invisible view
-// the on-screen keyboard types into (TextInputView). The Rust side calls
+// the documents it returns, the system clipboard, the print service, the
+// share sheet and "open with" (files served by SharedFiles), and an
+// invisible view the on-screen keyboard types into (TextInputView). The Rust side calls
 // the public methods through JNI from its own thread; a picked document
 // comes back through the native method nativeDocumentResult. Built by
 // scripts/android/build.sh with javac and d8 into classes.dex.
 package dev.tracedraw.app;
 
 import android.app.NativeActivity;
+import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ContentResolver;
@@ -18,13 +20,23 @@ import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.CancellationSignal;
+import android.os.ParcelFileDescriptor;
+import android.print.PageRange;
+import android.print.PrintAttributes;
+import android.print.PrintDocumentAdapter;
+import android.print.PrintDocumentInfo;
 import android.os.Process;
+import android.print.PrintManager;
 import android.provider.OpenableColumns;
 import android.util.Log;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
@@ -364,6 +376,192 @@ public class TraceDrawActivity extends NativeActivity {
                 // Nothing left to do with it.
             }
         }
+    }
+
+    // ----- printing, sharing and "open with" (#1398) ----------------------------
+
+    /**
+     * Hand the PDF at `path` (one of the app's files) to the system's print
+     * service as the job `job`; its dialog picks the printer, the copies
+     * and the paper. Whether the dialog opened.
+     */
+    public boolean printFile(final String path, final String job) {
+        Boolean done = onUiThread(new Callable<Boolean>() {
+            @Override
+            public Boolean call() {
+                PrintManager printing = (PrintManager) getSystemService(Context.PRINT_SERVICE);
+                final File file = new File(path);
+                if (printing == null || !file.isFile()) {
+                    return Boolean.FALSE;
+                }
+                printing.print(job, new PdfAdapter(file, job), null);
+                return Boolean.TRUE;
+            }
+        }, Boolean.FALSE);
+        return done != null && done.booleanValue();
+    }
+
+    /** Hands a ready PDF to the print service as it is. */
+    private static final class PdfAdapter extends PrintDocumentAdapter {
+        private final File file;
+        private final String name;
+
+        PdfAdapter(File file, String name) {
+            this.file = file;
+            this.name = name;
+        }
+
+        @Override
+        public void onLayout(PrintAttributes oldAttributes, PrintAttributes newAttributes,
+                CancellationSignal cancel, LayoutResultCallback callback, Bundle extras) {
+            if (cancel != null && cancel.isCanceled()) {
+                callback.onLayoutCancelled();
+                return;
+            }
+            PrintDocumentInfo info = new PrintDocumentInfo.Builder(name.endsWith(".pdf") ? name : name + ".pdf")
+                .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
+                .setPageCount(PrintDocumentInfo.PAGE_COUNT_UNKNOWN)
+                .build();
+            callback.onLayoutFinished(info, oldAttributes == null || !oldAttributes.equals(newAttributes));
+        }
+
+        @Override
+        public void onWrite(PageRange[] pages, ParcelFileDescriptor destination,
+                CancellationSignal cancel, WriteResultCallback callback) {
+            InputStream in = null;
+            FileOutputStream out = null;
+            try {
+                in = new FileInputStream(file);
+                out = new FileOutputStream(destination.getFileDescriptor());
+                byte[] buffer = new byte[64 * 1024];
+                int got;
+                while ((got = in.read(buffer)) != -1) {
+                    if (cancel != null && cancel.isCanceled()) {
+                        callback.onWriteCancelled();
+                        return;
+                    }
+                    out.write(buffer, 0, got);
+                }
+                out.flush();
+                callback.onWriteFinished(new PageRange[] {PageRange.ALL_PAGES});
+            } catch (Exception e) {
+                Log.w(TAG, "print: " + e);
+                callback.onWriteFailed(e.toString());
+            } finally {
+                close(in);
+                close(out);
+            }
+        }
+    }
+
+    /**
+     * Offer the file at `path` (one of the app's files, of type `mime`) to
+     * another app through the share sheet, with `subject` for a mail;
+     * `mail` limits the choice to mail apps. Whether the sheet opened.
+     */
+    public boolean shareFile(final String path, final String mime, final String subject, final boolean mail) {
+        Boolean done = onUiThread(new Callable<Boolean>() {
+            @Override
+            public Boolean call() {
+                Uri uri = SharedFiles.uriFor(TraceDrawActivity.this, new File(path));
+                if (uri == null) {
+                    Log.w(TAG, "share: " + path + " is not one of the app's files");
+                    return Boolean.FALSE;
+                }
+                Intent send = new Intent(Intent.ACTION_SEND);
+                send.setType(mime);
+                send.putExtra(Intent.EXTRA_STREAM, uri);
+                send.putExtra(Intent.EXTRA_SUBJECT, subject);
+                send.setClipData(ClipData.newRawUri(subject, uri));
+                send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                if (mail) {
+                    // Only the apps that send mail.
+                    send.setSelector(new Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")));
+                }
+                try {
+                    startActivity(Intent.createChooser(send, subject));
+                    return Boolean.TRUE;
+                } catch (ActivityNotFoundException e) {
+                    Log.w(TAG, "share: no app takes " + mime);
+                    return Boolean.FALSE;
+                }
+            }
+        }, Boolean.FALSE);
+        return done != null && done.booleanValue();
+    }
+
+    /**
+     * Open the file at `path` (one of the app's files, of type `mime`) in
+     * an app that edits it, with the right to write it back; the system
+     * asks which app when there are several. False when none edits it.
+     */
+    public boolean editFile(final String path, final String mime) {
+        Boolean done = onUiThread(new Callable<Boolean>() {
+            @Override
+            public Boolean call() {
+                Uri uri = SharedFiles.uriFor(TraceDrawActivity.this, new File(path));
+                if (uri == null) {
+                    Log.w(TAG, "edit: " + path + " is not one of the app's files");
+                    return Boolean.FALSE;
+                }
+                Intent edit = new Intent(Intent.ACTION_EDIT);
+                edit.setDataAndType(uri, mime);
+                edit.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                try {
+                    startActivity(edit);
+                    return Boolean.TRUE;
+                } catch (ActivityNotFoundException e) {
+                    Log.i(TAG, "edit: no app edits " + mime);
+                    return Boolean.FALSE;
+                }
+            }
+        }, Boolean.FALSE);
+        return done != null && done.booleanValue();
+    }
+
+    /**
+     * Show `target` in the app the system has for it: a web address (or
+     * any other URI with a scheme, such as a picked document's content
+     * URI), or one of the app's files (an absolute path), of type `mime`
+     * when it is not empty. False when no app opens it.
+     */
+    public boolean viewTarget(final String target, final String mime) {
+        Boolean done = onUiThread(new Callable<Boolean>() {
+            @Override
+            public Boolean call() {
+                Intent view = new Intent(Intent.ACTION_VIEW);
+                if (target.startsWith("/")) {
+                    Uri uri = SharedFiles.uriFor(TraceDrawActivity.this, new File(target));
+                    if (uri == null) {
+                        Log.w(TAG, "view: " + target + " is not one of the app's files");
+                        return Boolean.FALSE;
+                    }
+                    String type = mime == null || mime.isEmpty() ? SharedFiles.mimeOf(target) : mime;
+                    view.setDataAndType(uri, type);
+                    view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } else {
+                    // A web address, or a document the picker returned,
+                    // whose grant this app holds and passes on to read it.
+                    Uri uri = Uri.parse(target);
+                    if (mime == null || mime.isEmpty()) {
+                        view.setData(uri);
+                    } else {
+                        view.setDataAndType(uri, mime);
+                    }
+                    if ("content".equals(uri.getScheme())) {
+                        view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    }
+                }
+                try {
+                    startActivity(view);
+                    return Boolean.TRUE;
+                } catch (ActivityNotFoundException e) {
+                    Log.i(TAG, "view: no app opens " + target);
+                    return Boolean.FALSE;
+                }
+            }
+        }, Boolean.FALSE);
+        return done != null && done.booleanValue();
     }
 
     // ----- the system clipboard -----------------------------------------------

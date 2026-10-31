@@ -29,7 +29,10 @@ the owner does to publish it and what to test on a tablet first.
 | The few saves that need a path at once (`Dialog::save_path`: tone curve and duotone presets, the mask file, macro scripts and exports, palette files) | system save dialog | no picker yet: the file goes to the app's documents folder (`Android/data/dev.tracedraw.app/files` on the shared storage, which file managers show) under the suggested name |
 | Recent files, Welcome screen thumbnails | paths | the same list: a picked document is named `/content/<its URI, escaped>/<its display name>` (`files::document_path`), so the name shows and the URI reopens it; the system keeps the permission (`takePersistableUriPermission`) |
 | Pick a folder (export folders, font folders) | system folder dialog | not available (nothing is picked) |
-| Print, Send To, Edit Bitmap | system programs | not available (no printing service, no external programs) |
+| Print | the system's printers, or the PDF viewer | the system's print service (#1398): the Print dialog's destination reads "System printer (through the Android print service)", the print PDF is made as on the desktop and handed to `PrintManager`, whose dialog picks the printer, the copies and the paper; PDF and PostScript files go through the save picker |
+| Send To | a PDF in the Desktop or Documents folder, or for a mail | Documents: the save picker asks where the PDF goes; Mail Recipient: the share sheet, limited to the apps that send mail, gets the PDF as an attachment; Desktop is greyed with the reason (Android has no desktop folder) |
+| Edit Bitmap | the bitmap editor of the options, or the system's program for PNG files | "open with" (`ACTION_EDIT`): Android asks which app edits the picture and lets it write the picture back; the editor reads it again when it changes, as on the desktop. Options > File Locations says so instead of asking for a program. No app that edits pictures: the status bar says so |
+| Opening a page or a file (Help, links, Open Folder) | the system's browser and programs | web pages in the browser and files in the app picked for their type (`ACTION_VIEW`); Open Folder is greyed with the reason (Android shows no app's private folder to other apps) |
 | Clipboard | text, images and files through the system clipboard | text, pictures and files through the system's clipboard service: Copy puts the selection's SVG text there (other apps paste it as text, the editor as objects), Paste reads text copied elsewhere (artistic text, or objects when it is SVG), a picture copied elsewhere as a bitmap and documents copied elsewhere as imports (#1403); copies inside the editor work as before |
 | Settings | `settings.json` in the configuration folder | `settings.json` in the app's private folder (`TRACEDRAW_CONFIG_DIR` set by `android_main`) |
 | Fonts | installed system fonts | the system's fonts (`/system/fonts`, `/product/fonts` and `/vendor/fonts`: Roboto, Noto and the rest; the font database looks in no folder on Android by itself, so `tracedraw_text` names these) |
@@ -83,6 +86,29 @@ the Rust side queues the answer and asks egui for a frame;
 `files::run_finished`, called once per frame, runs the waiting closure
 with the documents' paths. A cancelled picker runs nothing. Several
 documents (Import of many) come as newline-separated lists.
+
+## Printing, sharing and "open with"
+
+The print service, the share sheet and the other apps need the file
+itself, and the editor's files (the print PDF, a picture to edit) live in
+the app's private folders, which no other app can open. The activity's
+file provider, `SharedFiles` (`packaging/android/java`, authority
+`dev.tracedraw.app.files`, not exported, `grantUriPermissions`), serves
+the files of the app's files and cache folders under
+`content://dev.tracedraw.app.files/files/<path>` (or `cache/<path>`),
+with the display name and size share targets ask for; a path that leads
+out of those folders (`..`, links) is refused. The bridge
+(`android::outside`) calls the activity's `printFile` (a
+`PrintDocumentAdapter` that copies the ready PDF to the service),
+`shareFile` (`ACTION_SEND` with the file as `EXTRA_STREAM` and a read
+grant, in the system's chooser; a `mailto:` selector for Mail Recipient
+keeps the mail apps only), `editFile` (`ACTION_EDIT` with read and write
+grants) and `viewTarget` (`ACTION_VIEW` for a web address, a picked
+document's content URI or one of the app's files). Each runs on the UI
+thread, answers whether the system took it, and a missing app comes back
+as false, which the status bar reports. `export::open_with_system` goes
+through `viewTarget` on Android, so Help, links and the other "open"
+commands work there; a folder cannot be shown (`status.no_folders_on_android`).
 
 ## The system clipboard
 
@@ -274,8 +300,9 @@ Now:
   answer queue, `register_natives`), `clipboard` (text, documents, set_text) and
   `keyboard` (the native methods of the keyboard's view, and a plugin
   that shows or hides the on-screen keyboard after each frame that asks
-  for an input method or no longer does, `showTextInput`) and `ending`
-  (the wait of the activity's end, see "Relaunches").
+  for an input method or no longer does, `showTextInput`), `ending`
+  (the wait of the activity's end, see "Relaunches") and `outside`
+  (print, share, edit and view, through `SharedFiles`).
   Every JNI failure is logged and comes back as `None`, never a panic.
 - `packaging/android/java/dev/tracedraw/app/TraceDrawActivity.java`: the
   activity, with the picker intents, `onActivityResult`, the content
@@ -302,11 +329,10 @@ Now:
 ## Later phases
 
 1. The remaining synchronous saves (`Dialog::save_path`) and the folder
-   pickers through the system picker; sharing a PDF or image to another
-   app (`ACTION_SEND`); opening a `.cdr` or `.tdraw` from a file manager
-   (`ACTION_VIEW`).
+   pickers through the system picker; opening a `.cdr` or `.tdraw` from
+   a file manager (`ACTION_VIEW`).
 2. Pen pressure and tilt (#850), palm rejection, a long press as the
    right click.
-3. Printing through the Android print service; the Help inside the app.
-5. A 32-bit ARM library for older devices; the store listing's
+3. The Help inside the app.
+4. A 32-bit ARM library for older devices; the store listing's
    screenshots from a device.

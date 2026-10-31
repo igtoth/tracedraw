@@ -7,10 +7,11 @@
 //! through the system's clipboard service, both reached over JNI with the
 //! activity's Java methods ([`documents`], [`clipboard`]), and text from
 //! the on-screen keyboard's input methods through an invisible view of
-//! the activity ([`keyboard`]); printing and
-//! external programs are not available (docs/behavior/android.md). When
-//! the system relaunches the activity, the process ends once the drawings
-//! are backed up and the system starts it again ([`ending`]).
+//! the activity ([`keyboard`]); printing, sharing and "open with" go
+//! through the system's print service, share sheet and intents
+//! ([`outside`]); there are no external programs (docs/behavior/android.md).
+//! When the system relaunches the activity, the process ends once the
+//! drawings are backed up and the system starts it again ([`ending`]).
 
 use android_activity::AndroidApp;
 use jni::refs::Reference as _;
@@ -439,6 +440,95 @@ pub mod clipboard {
                 jni_str!("setClipboardText"),
                 jni_sig!("(Ljava/lang/String;)Z"),
                 &[JValue::Object(&text)],
+            )?
+            .z()
+        })
+        .unwrap_or(false)
+    }
+}
+
+/// The system's own ways out of the app (#1398): its print service, the
+/// share sheet and "open with". A file handed over is one of the app's
+/// own (a print PDF, a picture to edit, in its private folder), which
+/// the activity's file provider (`SharedFiles.java`) serves to the app
+/// the user picks under a content URI with a grant for that app only.
+pub mod outside {
+    use super::*;
+    use jni::{jni_sig, jni_str, JValue};
+    use std::path::Path;
+
+    /// Hand the PDF at `path` to the system's print service as the job
+    /// `job`: the service's dialog picks the printer, the copies and the
+    /// paper. Whether the dialog opened.
+    pub fn print_pdf(path: &Path, job: &str) -> bool {
+        with_activity("print", |env, activity| {
+            let path = env.new_string(path.display().to_string())?;
+            let job = env.new_string(job)?;
+            env.call_method(
+                activity,
+                jni_str!("printFile"),
+                jni_sig!("(Ljava/lang/String;Ljava/lang/String;)Z"),
+                &[JValue::Object(&path), JValue::Object(&job)],
+            )?
+            .z()
+        })
+        .unwrap_or(false)
+    }
+
+    /// Offer the file at `path` (of type `mime`) to another app through
+    /// the share sheet, with `subject` for a mail; `mail` limits the
+    /// choice to mail apps. Whether the sheet opened.
+    pub fn share(path: &Path, mime: &str, subject: &str, mail: bool) -> bool {
+        with_activity("share", |env, activity| {
+            let path = env.new_string(path.display().to_string())?;
+            let mime = env.new_string(mime)?;
+            let subject = env.new_string(subject)?;
+            env.call_method(
+                activity,
+                jni_str!("shareFile"),
+                jni_sig!("(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)Z"),
+                &[
+                    JValue::Object(&path),
+                    JValue::Object(&mime),
+                    JValue::Object(&subject),
+                    JValue::Bool(mail as jni::sys::jboolean),
+                ],
+            )?
+            .z()
+        })
+        .unwrap_or(false)
+    }
+
+    /// Open the file at `path` (of type `mime`) in an app that edits it,
+    /// which may write it back. False when no app on the device edits
+    /// that type.
+    pub fn edit(path: &Path, mime: &str) -> bool {
+        with_activity("edit", |env, activity| {
+            let path = env.new_string(path.display().to_string())?;
+            let mime = env.new_string(mime)?;
+            env.call_method(
+                activity,
+                jni_str!("editFile"),
+                jni_sig!("(Ljava/lang/String;Ljava/lang/String;)Z"),
+                &[JValue::Object(&path), JValue::Object(&mime)],
+            )?
+            .z()
+        })
+        .unwrap_or(false)
+    }
+
+    /// Show `target`, a web address or one of the app's files, in the app
+    /// the system has for it (`mime` for a file, empty for an address).
+    /// False when no app opens it.
+    pub fn view(target: &str, mime: &str) -> bool {
+        with_activity("view", |env, activity| {
+            let target = env.new_string(target)?;
+            let mime = env.new_string(mime)?;
+            env.call_method(
+                activity,
+                jni_str!("viewTarget"),
+                jni_sig!("(Ljava/lang/String;Ljava/lang/String;)Z"),
+                &[JValue::Object(&target), JValue::Object(&mime)],
             )?
             .z()
         })

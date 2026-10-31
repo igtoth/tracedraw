@@ -2249,13 +2249,19 @@ fn spelling_tab(app: &mut App, ui: &mut Ui) {
                         false,
                         egui::TextEdit::singleline(&mut text).desired_width(320.0),
                     );
-                    if ui
-                        .add_enabled(
-                            own.is_some() && !crate::files::WEB,
-                            egui::Button::new(tr("options.open_folder")),
-                        )
-                        .clicked()
-                    {
+                    // Android shows no app's private folder in another
+                    // app (#1398): the button says so instead.
+                    let mut open = ui.add_enabled(
+                        own.is_some() && !crate::files::WEB && !crate::files::ANDROID,
+                        egui::Button::new(tr("options.open_folder")),
+                    );
+                    if crate::files::ANDROID {
+                        open = open.rich_disabled_tip(crate::ui::tips::pair(
+                            "options.open_folder",
+                            "options.open_folder_android",
+                        ));
+                    }
+                    if open.clicked() {
                         if let Some(dir) = &own {
                             let _ = std::fs::create_dir_all(dir);
                             if let Err(e) = crate::export::open_with_system(dir) {
@@ -4273,8 +4279,17 @@ fn global_general_page(app: &mut App, ui: &mut Ui) {
 }
 
 fn file_locations_page(app: &mut App, ui: &mut Ui) {
-    // The program Edit Bitmap opens pictures in (#593).
-    if !crate::files::WEB {
+    // The program Edit Bitmap opens pictures in (#593). Android has no
+    // programs to name: it asks which app edits the picture (#1398).
+    if crate::files::ANDROID {
+        ui.label(tr("options.bitmap_editor"));
+        ui.label(
+            egui::RichText::new(tr("options.bitmap_editor_android"))
+                .color(Tokens::text_dim())
+                .size(11.0),
+        );
+        ui.add_space(10.0);
+    } else if !crate::files::WEB {
         ui.label(tr("options.bitmap_editor"));
         ui.horizontal(|ui| {
             ui.add(
