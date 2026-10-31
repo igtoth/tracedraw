@@ -34,9 +34,26 @@ user alike: PowerShell lists `Win32_Printer` when the dialog opens
 (`WINDOWS_LIST`, `parse_windows_list`, #614) with each printer's
 PrinterStatus and WorkOffline (Ready, Printing, Warming up, Stopped,
 Offline, else Unknown), Location and Comment. A
-print on one of them draws each sheet at 300 dpi and hands the pictures
-to the printer through PowerShell's printing classes
-(`windows_print_script`), so no PDF program is needed: each sheet takes
+print on one of them draws each sheet at the printer's own resolution
+(its current setting, read through PowerShell before the sheets are
+drawn, `parse_windows_resolution`; the finest it offers when the setting
+is a named quality such as High; kept between 300 and 1200 dpi, 600
+when the printer does not say; `windows_print_dpi`), so fine lines and
+small text print as sharp as the PDF sent through `lp` on macOS and
+Linux (#1404; before, every Windows print was a 300 dpi picture). Each
+sheet goes as strips of at most 16 million pixels, every strip cut to
+its part that is not white and left out when it is all white
+(`sheet_tiles`), so a sheet never needs one huge picture in memory and
+blank paper adds nothing to the job. Each strip is drawn with rows of
+margin above and below, as far as shadow blurs reach (the whole sheet
+when it has a lens), and starts on a multiple of 16 rows
+(`render_page_rows`), so outlines leave no marks where strips meet. The strips are drawn pixel for
+pixel when the printer's resolution is the one they were drawn at, else
+smoothed, with their edges never blended with the paper, so strips meet
+with no seam. With General > Print as bitmap the sheets go at the
+resolution chosen there. The pictures reach the printer through
+PowerShell's printing classes (`windows_print_script`), so no PDF
+program is needed: each sheet takes
 the printer's paper of its size when the printer has one (either way
 round, within 2 mm), a wide sheet turns the paper, and the sheet is
 drawn at its size from the paper's corner; the copies and their
@@ -272,6 +289,7 @@ With any mark on, a 12 mm margin (plus the bleed) surrounds the pages.
 
 - `printers::tests::the_printer_list_is_read_from_lpstat`, `printers::tests::the_dialog_starts_on_the_remembered_printer_else_the_default`, `printers::tests::lp_is_told_the_printer_copies_and_title`
 - `printers::tests::the_windows_printer_list_holds_network_printers`, `printers::tests::the_windows_print_script_names_the_printer_copies_and_sheets`
+- `printers::tests::windows_tiles_go_pixel_for_pixel_at_the_printers_resolution`, `printers::tests::the_windows_printer_resolution_is_read`, `export::tests::printed_sheet_strips_put_together_are_the_whole_sheet`, `export::tests::windows_prints_at_the_printers_resolution`
 - `printers::tests::properties_open_the_printers_own_settings`, `pick_drag_tests::the_print_dialog_reads_the_printers_off_the_interface_thread`, `pick_drag_tests::a_destination_picked_while_the_printers_are_read_stays`
 - `export::tests::page_lists_and_ranges_pick_pages`
 - `export::tests::print_colour_options_change_the_sheets_objects`

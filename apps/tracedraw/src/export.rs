@@ -482,9 +482,12 @@ pub fn print(app: &mut App, st: &PrintState) -> Result<String, String> {
                 // thread: a slow or stuck printer leaves the window usable
                 // (#810).
                 let (printer, copies, collate) = (printer.clone(), st.copies, st.collate);
+                // Print as bitmap: the sheets are already pictures of
+                // that resolution, sent as they are.
+                let bitmap_dpi = st.as_bitmap.then(|| st.bitmap_dpi.clamp(36.0, 1200.0));
                 let msg = trf("status.printing_to", &[("name", &printer)]);
                 app.start_print_job(move || {
-                    print_on(&printer, &name, &doc, copies, collate, &stem)
+                    print_on(&printer, &name, &doc, copies, collate, &stem, bitmap_dpi)
                 });
                 return Ok(msg);
             }
@@ -510,6 +513,7 @@ fn print_on(
     copies: u32,
     collate: bool,
     title: &str,
+    _bitmap_dpi: Option<f64>,
 ) -> Result<String, String> {
     let pdf = tracedraw_io::pdf::document_to_pdf(doc);
     let dir = std::env::temp_dir().join("tracedraw-print");
@@ -520,13 +524,13 @@ fn print_on(
     Ok(trf("status.print_sent_printer", &[("name", printer)]))
 }
 
-/// The resolution sheets are drawn at for a Windows printer.
-#[cfg(target_os = "windows")]
-const WINDOWS_PRINT_DPI: f64 = 300.0;
-
-/// The sheets drawn as pictures and sent to the Windows printer
-/// `printer`, local or on the network (#614), with the copies the dialog
-/// asked for.
+/// The sheets drawn at the printer's own resolution and sent to the
+/// Windows printer `printer`, local or on the network (#614), with the
+/// copies the dialog asked for. Each sheet goes as strips of pixels with
+/// its blank parts left out, so fine lines and small text come out as
+/// sharp as from a PDF sent through `lp` and blank paper costs nothing in
+/// the job (#1404); `bitmap_dpi` (Print as bitmap) sends that resolution
+/// instead.
 #[cfg(target_os = "windows")]
 fn print_on(
     printer: &str,
@@ -535,16 +539,127 @@ fn print_on(
     copies: u32,
     collate: bool,
     title: &str,
+    bitmap_dpi: Option<f64>,
 ) -> Result<String, String> {
-    let sheets: Vec<(Vec<u8>, f64, f64)> = doc
+    let dpi = bitmap_dpi
+        .unwrap_or_else(|| windows_print_dpi(crate::printers::printer_resolution_windows(printer)));
+    let sheets: Vec<crate::printers::Sheet> = doc
         .pages
         .iter()
-        .filter_map(|p| {
-            sheet_png(doc, p.id, WINDOWS_PRINT_DPI).map(|png| (png, p.size.width, p.size.height))
+        .map(|p| crate::printers::Sheet {
+            width: p.size.width,
+            height: p.size.height,
+            tiles: sheet_tiles(doc, p.id, dpi, PRINT_TILE_PIXELS).unwrap_or_default(),
         })
         .collect();
-    crate::printers::print_sheets_windows(printer, &sheets, copies, collate, title)?;
+    crate::printers::print_sheets_windows(printer, &sheets, dpi, copies, collate, title)?;
     Ok(trf("status.print_sent_printer", &[("name", printer)]))
+}
+
+/// The resolution sheets are drawn at for a Windows printer that says
+/// `reported` dots per inch: its own, kept between 300 and 1200 (a
+/// higher one would only make the job larger), 600 when it does not say.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn windows_print_dpi(reported: Option<f64>) -> f64 {
+    match reported {
+        Some(d) if d.is_finite() && d > 0.0 => d.clamp(300.0, 1200.0),
+        _ => 600.0,
+    }
+}
+
+/// The most pixels drawn at once for a printed sheet (64 MB of RGBA).
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+const PRINT_TILE_PIXELS: u64 = 1 << 24;
+
+/// A sheet drawn on white at `dpi` as strips of at most `max_pixels`
+/// pixels each, every strip cut to the part of it that is not blank
+/// (white) and left out when all of it is: the PNGs with where they go on
+/// the sheet. The strips put together give the same pixels as the whole
+/// sheet drawn at once, with no sheet-sized picture in memory.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn sheet_tiles(
+    doc: &Document,
+    id: tracedraw_core::PageId,
+    dpi: f64,
+    max_pixels: u64,
+) -> Option<Vec<crate::printers::Tile>> {
+    let page = doc.page(id).ok()?;
+    let zoom = dpi / 25.4;
+    let w = ((page.size.width * zoom).ceil() as u32).max(1);
+    let h = ((page.size.height * zoom).ceil() as u32).max(1);
+    // Whole multiples of 16 rows, as the coarse grid of procedural fills.
+    let rows = ((max_pixels / w as u64) / 16 * 16).clamp(16, (h as u64).div_ceil(16) * 16) as u32;
+    let opts = tracedraw_render::RenderOptions {
+        width: w,
+        height: h,
+        view: tracedraw_render::ViewTransform {
+            zoom,
+            origin_x: 0.0,
+            origin_y: h as f64,
+        },
+        ..Default::default()
+    };
+    let mut tiles = Vec::new();
+    let mut y0 = 0u32;
+    while y0 < h {
+        let band = rows.min(h - y0);
+        let objects = tracedraw_render::render_page_rows(doc, id, &opts, y0, y0 + band)?;
+        let mut strip = tiny_skia::Pixmap::new(w, band)?;
+        strip.fill(tiny_skia::Color::WHITE);
+        strip.draw_pixmap(
+            0,
+            0,
+            objects.as_ref(),
+            &Default::default(),
+            tiny_skia::Transform::identity(),
+            None,
+        );
+        if let Some((x, y, cw, ch)) = inked_area(&strip) {
+            let part =
+                strip.clone_rect(tiny_skia::IntRect::from_xywh(x as i32, y as i32, cw, ch)?)?;
+            tiles.push(crate::printers::Tile {
+                png: part.encode_png().ok()?,
+                x: x as f64 / zoom,
+                y: (y0 + y) as f64 / zoom,
+                width: cw as f64 / zoom,
+                height: ch as f64 / zoom,
+            });
+        }
+        y0 += band;
+    }
+    Some(tiles)
+}
+
+/// The smallest box (x, y, width, height in pixels) holding every pixel of
+/// `pm` that is not white; `None` when all of them are.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn inked_area(pm: &tiny_skia::Pixmap) -> Option<(u32, u32, u32, u32)> {
+    let w = pm.width() as usize;
+    let (mut x0, mut y0, mut x1, mut y1) = (usize::MAX, usize::MAX, 0, 0);
+    for (y, row) in pm.data().chunks_exact(w * 4).enumerate() {
+        let mut first = None;
+        let mut last = 0;
+        for (x, px) in row.chunks_exact(4).enumerate() {
+            if px != [255, 255, 255, 255] {
+                first.get_or_insert(x);
+                last = x;
+            }
+        }
+        if let Some(f) = first {
+            x0 = x0.min(f);
+            x1 = x1.max(last);
+            y0 = y0.min(y);
+            y1 = y;
+        }
+    }
+    (x0 != usize::MAX).then(|| {
+        (
+            x0 as u32,
+            y0 as u32,
+            (x1 - x0 + 1) as u32,
+            (y1 - y0 + 1) as u32,
+        )
+    })
 }
 
 /// Prints sent to the system viewer in this session.
@@ -916,12 +1031,6 @@ fn sheet_pixels(
     );
     let png = white.encode_png().ok()?;
     Some((png, white.width(), white.height()))
-}
-
-/// [`sheet_pixels`]'s PNG.
-#[cfg(target_os = "windows")]
-fn sheet_png(doc: &Document, id: tracedraw_core::PageId, dpi: f64) -> Option<Vec<u8>> {
-    sheet_pixels(doc, id, dpi).map(|(png, _, _)| png)
 }
 
 /// General > Print as bitmap: each sheet becomes one picture of itself.
@@ -1859,6 +1968,90 @@ mod tests {
         let full = Fill::Solid(tracedraw_core::Color::Gray { v: 0.0 });
         assert!(fills(spot).contains(&full), "{:?}", fills(spot));
         assert!(!fills(&seps.pages[0]).contains(&full));
+    }
+
+    /// A Windows print goes at the printer's resolution in strips, blank
+    /// ones left out and each cut to its inked part; put back together
+    /// they are the sheet drawn whole, pixel for pixel (#1404).
+    #[test]
+    fn printed_sheet_strips_put_together_are_the_whole_sheet() {
+        use tracedraw_core::Fill;
+        let mut doc = Document::new("s", tracedraw_core::Size::new(50.0, 40.0));
+        let layer = doc.pages[0].layers[0].id;
+        let page = doc.pages[0].id;
+        for (rect, colour) in [
+            (
+                tracedraw_core::Rect::new(3.0, 2.0, 21.5, 9.3),
+                tracedraw_core::Color::rgb8(200, 0, 0),
+            ),
+            (
+                tracedraw_core::Rect::new(10.2, 25.0, 47.0, 38.0),
+                tracedraw_core::Color::rgb8(0, 90, 200),
+            ),
+        ] {
+            let id = doc.ids_mut().shape();
+            let mut s = tracedraw_core::Shape::new(id, ShapeKind::Ellipse { rect, arc: None });
+            s.fill = Fill::Solid(colour);
+            doc.layer_mut(layer).expect("layer").shapes.push(s);
+        }
+        let dpi = 200.0;
+        let whole = tracedraw_render::render_page_image(&doc, page, dpi).expect("whole");
+        let (w, h) = (whole.width(), whole.height());
+        // Strips of 16 rows: many, some blank, some cut.
+        let tiles = sheet_tiles(&doc, page, dpi, w as u64 * 16).expect("tiles");
+        assert!(tiles.len() > 4, "{}", tiles.len());
+        assert!(
+            tiles.len() < h.div_ceil(16) as usize,
+            "the blank strips between the two shapes are left out"
+        );
+        let mut joined = tiny_skia::Pixmap::new(w, h).expect("joined");
+        joined.fill(tiny_skia::Color::WHITE);
+        let zoom = dpi / 25.4;
+        for t in &tiles {
+            assert!(t.width < 50.0 - 1.0, "cut to its inked part");
+            let pm = tiny_skia::Pixmap::decode_png(&t.png).expect("png");
+            assert!(pm.height() <= 16);
+            assert!(((t.width * zoom) - pm.width() as f64).abs() < 1e-6);
+            assert!(((t.height * zoom) - pm.height() as f64).abs() < 1e-6);
+            joined.draw_pixmap(
+                (t.x * zoom).round() as i32,
+                (t.y * zoom).round() as i32,
+                pm.as_ref(),
+                &Default::default(),
+                tiny_skia::Transform::identity(),
+                None,
+            );
+        }
+        // The same pixels, but for an edge's smoothing now and then by a
+        // step of its sixteen samples (each strip's shapes are placed a
+        // whole number of rows apart, which rounds a coordinate the other
+        // way at times): no marks where the strips meet, where outlines
+        // cut at a strip's edge used to leave caps.
+        let differ: Vec<u8> = whole
+            .data()
+            .iter()
+            .zip(joined.data())
+            .map(|(a, b)| a.abs_diff(*b))
+            .filter(|d| *d > 0)
+            .collect();
+        let worst = differ.iter().copied().max().unwrap_or(0);
+        assert!(worst <= 40, "{worst}");
+        assert!(differ.len() < whole.data().len() / 200, "{}", differ.len());
+        // A blank sheet sends nothing but the paper.
+        let blank = Document::new("b", tracedraw_core::Size::new(50.0, 40.0));
+        let tiles = sheet_tiles(&blank, blank.pages[0].id, 300.0, 1 << 24).expect("blank");
+        assert!(tiles.is_empty());
+    }
+
+    /// The printer's own resolution, kept within reason (#1404).
+    #[test]
+    fn windows_prints_at_the_printers_resolution() {
+        assert_eq!(windows_print_dpi(Some(600.0)), 600.0);
+        assert_eq!(windows_print_dpi(Some(1200.0)), 1200.0);
+        assert_eq!(windows_print_dpi(Some(2400.0)), 1200.0);
+        assert_eq!(windows_print_dpi(Some(150.0)), 300.0);
+        assert_eq!(windows_print_dpi(None), 600.0);
+        assert_eq!(windows_print_dpi(Some(f64::NAN)), 600.0);
     }
 
     #[test]

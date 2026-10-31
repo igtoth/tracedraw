@@ -375,41 +375,82 @@ fn ps_quote(s: &str) -> String {
     out
 }
 
-/// The PowerShell script that prints `sheets` (picture files with the
-/// sheet's width and height in mm) on the Windows printer `printer`:
-/// `copies` copies, collated or not, under `title` in the queue. Each
-/// sheet takes the printer's paper of its size when it has one (either
-/// way round), turns the paper for a wide sheet, and is drawn at its
-/// size from the paper's corner, the printer's unprintable edge taken
-/// off, as a PDF viewer prints a page at actual size. Exits with 2 when
-/// the printer is gone.
+/// One picture of part of a printed sheet: its PNG and where it goes, in
+/// mm from the sheet's top-left corner.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub struct Tile {
+    pub png: Vec<u8>,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// A sheet for a Windows printer: its size in mm and the pictures of its
+/// parts that are not blank.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub struct Sheet {
+    pub width: f64,
+    pub height: f64,
+    pub tiles: Vec<Tile>,
+}
+
+/// A tile written to disk for the print script: its file and place in mm.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub struct TileFile {
+    pub path: std::path::PathBuf,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// The PowerShell script that prints `sheets` (each its width and height
+/// in mm and its tiles: picture files drawn at `dpi` with their place in
+/// mm) on the Windows printer `printer`: `copies` copies, collated or
+/// not, under `title` in the queue. Each sheet takes the printer's paper
+/// of its size when it has one (either way round), turns the paper for a
+/// wide sheet, and is drawn at its size from the paper's corner, the
+/// printer's unprintable edge taken off, as a PDF viewer prints a page at
+/// actual size. Tiles drawn at the printer's own resolution go pixel for
+/// pixel; others are smoothed, their edges never blended with the paper,
+/// so strips meet with no seam (#1404). Exits with 2 when the printer is
+/// gone.
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub fn windows_print_script(
     printer: &str,
-    sheets: &[(std::path::PathBuf, f64, f64)],
+    sheets: &[(f64, f64, Vec<TileFile>)],
+    dpi: f64,
     copies: u32,
     collate: bool,
     title: &str,
 ) -> String {
-    let files: Vec<String> = sheets
-        .iter()
-        .map(|(p, _, _)| ps_quote(&p.display().to_string()))
-        .collect();
-    // One `Add` per sheet: `@(@(w, h))` of a single sheet flattens to
-    // `@(w, h)` in PowerShell, so `$sizes[0][0]` was `$null`, the paper
+    // Lists are built with `Add`: `@(@(w, h))` of a single entry flattens
+    // to `@(w, h)` in PowerShell, so `$sizes[0][0]` was `$null`, the paper
     // size check threw "Argument types do not match" and nothing reached
     // the spooler whatever the printer (#614).
-    let sizes: Vec<String> = sheets
-        .iter()
-        .map(|(_, w, h)| format!("[void]$sizes.Add(@({w:.3}, {h:.3}))"))
-        .collect();
+    let mut list = String::new();
+    for (w, h, tiles) in sheets {
+        list.push_str("$t = New-Object System.Collections.ArrayList\n");
+        for t in tiles {
+            list.push_str(&format!(
+                "[void]$t.Add(@({}, {:.4}, {:.4}, {:.4}, {:.4}))\n",
+                ps_quote(&t.path.display().to_string()),
+                t.x,
+                t.y,
+                t.width,
+                t.height
+            ));
+        }
+        list.push_str(&format!(
+            "[void]$sheets.Add(@{{ w = {w:.3}; h = {h:.3}; tiles = $t }})\n"
+        ));
+    }
     format!(
         r#"$ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
-$files = @({files})
-$sizes = New-Object System.Collections.ArrayList
-{sizes}
-$doc = New-Object System.Drawing.Printing.PrintDocument
+$sheets = New-Object System.Collections.ArrayList
+{list}$doc = New-Object System.Drawing.Printing.PrintDocument
 $doc.PrinterSettings.PrinterName = {printer}
 if (-not $doc.PrinterSettings.IsValid) {{ [Console]::Error.WriteLine('Printer not found: ' + {printer}); exit 2 }}
 $doc.DocumentName = {title}
@@ -421,7 +462,7 @@ $doc.PrintController = New-Object System.Drawing.Printing.StandardPrintControlle
 $state = @{{ i = 0 }}
 $doc.add_QueryPageSettings({{
     param($sender, $e)
-    $w = $sizes[$state.i][0]; $h = $sizes[$state.i][1]
+    $w = $sheets[$state.i].w; $h = $sheets[$state.i].h
     foreach ($p in $doc.PrinterSettings.PaperSizes) {{
         $pw = $p.Width * 0.254; $ph = $p.Height * 0.254
         if (([Math]::Abs($pw - [Math]::Min($w, $h)) -lt 2) -and ([Math]::Abs($ph - [Math]::Max($w, $h)) -lt 2)) {{
@@ -433,36 +474,51 @@ $doc.add_QueryPageSettings({{
 }})
 $doc.add_PrintPage({{
     param($sender, $e)
-    $w = $sizes[$state.i][0]; $h = $sizes[$state.i][1]
-    $img = [System.Drawing.Image]::FromFile($files[$state.i])
     $g = $e.Graphics
     $g.PageUnit = [System.Drawing.GraphicsUnit]::Millimeter
-    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    if ([Math]::Abs($g.DpiX - {dpi}) -lt 1 -and [Math]::Abs($g.DpiY - {dpi}) -lt 1) {{
+        $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
+    }} else {{
+        $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    }}
+    $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::Half
+    $attr = New-Object System.Drawing.Imaging.ImageAttributes
+    $attr.SetWrapMode([System.Drawing.Drawing2D.WrapMode]::TileFlipXY)
     $mx = $e.PageSettings.HardMarginX * 0.254; $my = $e.PageSettings.HardMarginY * 0.254
-    $g.DrawImage($img, [single](-$mx), [single](-$my), [single]$w, [single]$h)
-    $img.Dispose()
+    foreach ($tile in $sheets[$state.i].tiles) {{
+        $img = [System.Drawing.Image]::FromFile($tile[0])
+        $x = [single]($tile[1] - $mx); $y = [single]($tile[2] - $my)
+        $to = [System.Drawing.PointF[]]@(
+            (New-Object System.Drawing.PointF($x, $y)),
+            (New-Object System.Drawing.PointF([single]($x + $tile[3]), $y)),
+            (New-Object System.Drawing.PointF($x, [single]($y + $tile[4]))))
+        $from = New-Object System.Drawing.RectangleF(0, 0, $img.Width, $img.Height)
+        $g.DrawImage($img, $to, $from, [System.Drawing.GraphicsUnit]::Pixel, $attr)
+        $img.Dispose()
+    }}
+    $attr.Dispose()
     $state.i++
-    $e.HasMorePages = $state.i -lt $files.Count
+    $e.HasMorePages = $state.i -lt $sheets.Count
 }})
 $doc.Print()
-[Console]::Out.WriteLine('sent ' + $state.i + ' sheet(s) to ' + {printer})
+[Console]::Out.WriteLine('sent ' + $state.i + ' sheet(s) at {dpi} dpi to ' + {printer})
 "#,
-        files = files.join(", "),
-        sizes = sizes.join("\n"),
         printer = ps_quote(printer),
         title = ps_quote(title),
+        dpi = dpi.round(),
         copies = copies.clamp(1, 999),
         collate = if collate { "true" } else { "false" },
     )
 }
 
-/// Print `sheets` (PNG pictures with their size in mm) on the Windows
-/// printer `printer` through [`windows_print_script`]. Ok when Windows
-/// took the job, Err with what went wrong.
+/// Print `sheets` (their tiles drawn at `dpi`) on the Windows printer
+/// `printer` through [`windows_print_script`]. Ok when Windows took the
+/// job, Err with what went wrong.
 #[cfg(target_os = "windows")]
 pub fn print_sheets_windows(
     printer: &str,
-    sheets: &[(Vec<u8>, f64, f64)],
+    sheets: &[Sheet],
+    dpi: f64,
     copies: u32,
     collate: bool,
     title: &str,
@@ -470,21 +526,33 @@ pub fn print_sheets_windows(
     let dir = std::env::temp_dir().join("tracedraw-print");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let mut files = Vec::with_capacity(sheets.len());
-    for (k, (png, w, h)) in sheets.iter().enumerate() {
-        let path = dir.join(format!("sheet-{}.png", k + 1));
-        std::fs::write(&path, png).map_err(|e| e.to_string())?;
-        files.push((path, *w, *h));
+    let mut written = Vec::new();
+    for (k, sheet) in sheets.iter().enumerate() {
+        let mut tiles = Vec::with_capacity(sheet.tiles.len());
+        for (n, t) in sheet.tiles.iter().enumerate() {
+            let path = dir.join(format!("sheet-{}-{}.png", k + 1, n + 1));
+            std::fs::write(&path, &t.png).map_err(|e| e.to_string())?;
+            written.push(path.clone());
+            tiles.push(TileFile {
+                path,
+                x: t.x,
+                y: t.y,
+                width: t.width,
+                height: t.height,
+            });
+        }
+        files.push((sheet.width, sheet.height, tiles));
     }
     let script = dir.join("print.ps1");
     // With its byte order mark PowerShell reads the script as UTF-8, so
     // printer and file names in any script survive.
     let mut bytes = vec![0xef, 0xbb, 0xbf];
     bytes.extend_from_slice(
-        windows_print_script(printer, &files, copies, collate, title).as_bytes(),
+        windows_print_script(printer, &files, dpi, copies, collate, title).as_bytes(),
     );
     std::fs::write(&script, bytes).map_err(|e| e.to_string())?;
     let result = run_print_script(&script, PRINT_TIMEOUT);
-    for (path, _, _) in &files {
+    for path in &written {
         let _ = std::fs::remove_file(path);
     }
     // What happened goes in the log, so a print that did not come out
@@ -494,6 +562,66 @@ pub fn print_sheets_windows(
         Err(e) => log::warn!("print on {printer} failed: {e}"),
     }
     result.map(|_| String::new())
+}
+
+/// The PowerShell lines that say the resolution of the printer `printer`:
+/// "X Y" of its current setting, then of each it offers.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn windows_resolution_script(printer: &str) -> String {
+    format!(
+        r#"Add-Type -AssemblyName System.Drawing
+$s = New-Object System.Drawing.Printing.PrinterSettings
+$s.PrinterName = {printer}
+if (-not $s.IsValid) {{ exit 2 }}
+$r = $s.DefaultPageSettings.PrinterResolution
+[Console]::Out.WriteLine([string]$r.X + ' ' + [string]$r.Y)
+foreach ($r in $s.PrinterResolutions) {{ [Console]::Out.WriteLine([string]$r.X + ' ' + [string]$r.Y) }}
+"#,
+        printer = ps_quote(printer)
+    )
+}
+
+/// The resolution in dots per inch from [`windows_resolution_script`]'s
+/// output: the current setting's finer direction when it is given in dots
+/// (a named quality such as "High" comes as a negative number), else the
+/// finest the printer offers; `None` when it says nothing usable.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn parse_windows_resolution(output: &str) -> Option<f64> {
+    let dots: Vec<Option<f64>> = output
+        .lines()
+        .map(|l| {
+            let mut it = l.split_whitespace().map(|v| v.parse::<f64>().ok());
+            let (x, y) = (it.next()??, it.next()??);
+            (x > 0.0 && y > 0.0).then_some(x.max(y))
+        })
+        .collect();
+    match dots.first() {
+        Some(Some(d)) => Some(*d),
+        _ => dots
+            .iter()
+            .skip(1)
+            .flatten()
+            .copied()
+            .fold(None, |m: Option<f64>, d| Some(m.map_or(d, |m| m.max(d)))),
+    }
+}
+
+/// The resolution the Windows printer `printer` prints at, `None` when it
+/// cannot be told.
+#[cfg(target_os = "windows")]
+pub fn printer_resolution_windows(printer: &str) -> Option<f64> {
+    let out = powershell()
+        .arg("-Command")
+        .arg(windows_resolution_script(printer))
+        .output()
+        .ok()?;
+    let found = out
+        .status
+        .success()
+        .then(|| parse_windows_resolution(&String::from_utf8_lossy(&out.stdout)))
+        .flatten();
+    log::info!("print on {printer}: resolution {found:?}");
+    found
 }
 
 /// How long the print script may run before it is taken as hung.
@@ -622,23 +750,32 @@ mod tests {
         assert!(WINDOWS_LIST.contains("Win32_Printer"));
     }
 
+    fn tile(path: &str, x: f64, y: f64, w: f64, h: f64) -> TileFile {
+        TileFile {
+            path: std::path::PathBuf::from(path),
+            x,
+            y,
+            width: w,
+            height: h,
+        }
+    }
+
     /// The Windows print script names the printer, the copies and the
-    /// sheets, quoting what it is given.
+    /// sheets with their tiles, quoting what it is given.
     #[test]
     fn the_windows_print_script_names_the_printer_copies_and_sheets() {
         let sheets = [
             (
-                std::path::PathBuf::from(r"C:\Temp\sheet-1.png"),
                 210.0,
                 297.0,
+                vec![
+                    tile(r"C:\Temp\sheet-1-1.png", 10.0, 0.0, 190.0, 68.25),
+                    tile(r"C:\Temp\sheet-1-2.png", 12.5, 68.25, 20.0, 5.0),
+                ],
             ),
-            (
-                std::path::PathBuf::from(r"C:\Temp\sheet-2.png"),
-                297.0,
-                210.0,
-            ),
+            (297.0, 210.0, vec![]),
         ];
-        let s = windows_print_script(r"\\srv\Bob's printer", &sheets, 3, false, "Poster");
+        let s = windows_print_script(r"\\srv\Bob's printer", &sheets, 600.0, 3, false, "Poster");
         assert!(
             s.contains(r"$doc.PrinterSettings.PrinterName = '\\srv\Bob''s printer'"),
             "{s}"
@@ -646,19 +783,19 @@ mod tests {
         assert!(s.contains("$doc.PrinterSettings.Copies = 3"));
         assert!(s.contains("$doc.PrinterSettings.Collate = $false"));
         assert!(
-            s.contains(r"$files = @('C:\Temp\sheet-1.png', 'C:\Temp\sheet-2.png')"),
-            "{s}"
-        );
-        assert!(
             s.contains(
-                "[void]$sizes.Add(@(210.000, 297.000))\n[void]$sizes.Add(@(297.000, 210.000))"
+                "$t = New-Object System.Collections.ArrayList\n\
+                 [void]$t.Add(@('C:\\Temp\\sheet-1-1.png', 10.0000, 0.0000, 190.0000, 68.2500))\n\
+                 [void]$t.Add(@('C:\\Temp\\sheet-1-2.png', 12.5000, 68.2500, 20.0000, 5.0000))\n\
+                 [void]$sheets.Add(@{ w = 210.000; h = 297.000; tiles = $t })\n\
+                 $t = New-Object System.Collections.ArrayList\n\
+                 [void]$sheets.Add(@{ w = 297.000; h = 210.000; tiles = $t })\n"
             ),
             "{s}"
         );
-        // One sheet stays a list of one size, not a flattened pair: the
-        // flattened form made every one-sheet print fail (#614).
-        let one = windows_print_script("P", &sheets[..1], 1, false, "");
-        assert!(one.contains("$sizes = New-Object System.Collections.ArrayList\n[void]$sizes.Add(@(210.000, 297.000))"), "{one}");
+        // A sheet with one tile keeps a list of one, not a flattened
+        // entry: the flattened form made every one-sheet print fail (#614).
+        let one = windows_print_script("P", &sheets[..1], 600.0, 1, false, "");
         assert!(!one.contains("@(@("), "{one}");
         assert!(s.contains("$doc.DocumentName = 'Poster'"));
         // No status window from a process that has no window.
@@ -672,13 +809,66 @@ mod tests {
         assert!(s.contains("[Console]::Out.WriteLine('sent '"), "{s}");
         // Typographic quotes close a PowerShell string too.
         assert_eq!(ps_quote("a\u{2019}b"), "'a\u{2019}\u{2019}b'");
-        assert!(windows_print_script("P", &sheets, 0, true, "").contains("Copies = 1"));
+        assert!(windows_print_script("P", &sheets, 600.0, 0, true, "").contains("Copies = 1"));
+    }
+
+    /// Tiles drawn at the printer's own resolution go pixel for pixel,
+    /// others smoothed; their edges are never blended with the paper, so
+    /// the strips of a sheet meet with no seam, and nothing is rounded to
+    /// whole millimetres (#1404).
+    #[test]
+    fn windows_tiles_go_pixel_for_pixel_at_the_printers_resolution() {
+        let sheets = [(210.0, 297.0, vec![tile("a.png", 1.0, 2.0, 3.0, 4.0)])];
+        let s = windows_print_script("P", &sheets, 1200.0, 1, false, "");
+        assert!(
+            s.contains(
+                "if ([Math]::Abs($g.DpiX - 1200) -lt 1 -and [Math]::Abs($g.DpiY - 1200) -lt 1)"
+            ),
+            "{s}"
+        );
+        let exact = s
+            .find("InterpolationMode]::NearestNeighbor")
+            .expect("exact");
+        let smooth = s
+            .find("InterpolationMode]::HighQualityBicubic")
+            .expect("smooth");
+        assert!(exact < smooth);
+        assert!(s.contains("SetWrapMode([System.Drawing.Drawing2D.WrapMode]::TileFlipXY)"));
+        assert!(s.contains(
+            "$g.DrawImage($img, $to, $from, [System.Drawing.GraphicsUnit]::Pixel, $attr)"
+        ));
+        assert!(!s.contains("Rectangle]::Round"), "{s}");
+        assert!(s.contains("sheet(s) at 1200 dpi"), "{s}");
+    }
+
+    /// The printer's resolution: its current setting, else the finest it
+    /// offers when the setting is a named quality (#1404).
+    #[test]
+    fn the_windows_printer_resolution_is_read() {
+        assert_eq!(
+            parse_windows_resolution("600 600\r\n300 300\r\n600 600\r\n"),
+            Some(600.0)
+        );
+        assert_eq!(parse_windows_resolution("1200 600\n"), Some(1200.0));
+        // "High" is -4: the finest offered instead.
+        assert_eq!(
+            parse_windows_resolution("-4 -1\n-4 -1\n300 300\n1200 1200\n600 600\n"),
+            Some(1200.0)
+        );
+        assert_eq!(parse_windows_resolution("-3 -1\n-3 -1\n"), None);
+        assert_eq!(parse_windows_resolution(""), None);
+        assert_eq!(parse_windows_resolution("x y\n"), None);
+        let script = windows_resolution_script("Bob's");
+        assert!(script.contains("$s.PrinterName = 'Bob''s'"), "{script}");
+        assert!(script.contains("DefaultPageSettings.PrinterResolution"));
+        assert!(script.contains("foreach ($r in $s.PrinterResolutions)"));
     }
 
     /// Write the print script for the printer in `PRINTER_NAME`, one A4
-    /// sheet, to the path in `PRINT_SCRIPT_OUT` (a check on a Windows
-    /// machine runs it as TraceDraw does); `OLD_CONTROLLER=1` leaves the
-    /// standard controller out, as before #614.
+    /// sheet in two tiles at 600 dpi, to the path in `PRINT_SCRIPT_OUT`
+    /// (a check on a Windows machine runs it as TraceDraw does);
+    /// `OLD_CONTROLLER=1` leaves the standard controller out, as before
+    /// #614.
     #[test]
     #[ignore]
     fn dump_windows_print_script() {
@@ -692,11 +882,26 @@ mod tests {
             .parent()
             .expect("folder")
             .to_path_buf();
-        let png = dir.join("sheet-1.png");
-        image::RgbaImage::from_pixel(248, 351, image::Rgba([200, 30, 30, 255]))
-            .save(&png)
-            .expect("sheet");
-        let mut script = windows_print_script(&printer, &[(png, 210.0, 297.0)], 1, false, "Check");
+        let mut tiles = Vec::new();
+        for (k, colour) in [[200, 30, 30, 255], [30, 30, 200, 255]]
+            .into_iter()
+            .enumerate()
+        {
+            let png = dir.join(format!("sheet-1-{}.png", k + 1));
+            image::RgbaImage::from_pixel(4961, 3508, image::Rgba(colour))
+                .save(&png)
+                .expect("tile");
+            let y = k as f64 * 148.5;
+            tiles.push(TileFile {
+                path: png,
+                x: 0.0,
+                y,
+                width: 4961.0 * 25.4 / 600.0,
+                height: 3508.0 * 25.4 / 600.0,
+            });
+        }
+        let mut script =
+            windows_print_script(&printer, &[(210.0, 297.0, tiles)], 600.0, 1, false, "Check");
         if std::env::var("OLD_CONTROLLER").is_ok_and(|v| v == "1") {
             script = script
                 .lines()

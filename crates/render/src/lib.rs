@@ -212,6 +212,46 @@ pub fn render_page(doc: &Document, page: PageId, opts: &RenderOptions) -> Option
     render_page_whole(doc, page, opts)
 }
 
+/// Rows `y0..y1` of the image `opts` describes, the same as those rows of
+/// the whole image drawn at once: drawn with rows of margin above and
+/// below as far as shadow blurs reach (every row when the page has a
+/// lens, which may show what lies anywhere beneath it), so a large page
+/// can be drawn a strip at a time without the whole of it in memory
+/// (#1404). Strips should start on rows that are multiples of 16, as the
+/// coarse grid of procedural fills does.
+pub fn render_page_rows(
+    doc: &Document,
+    page: PageId,
+    opts: &RenderOptions,
+    y0: u32,
+    y1: u32,
+) -> Option<Pixmap> {
+    let (w, h) = (opts.width.max(1), opts.height.max(1));
+    let (y0, y1) = (y0.min(h), y1.min(h));
+    if y1 <= y0 {
+        return None;
+    }
+    let (lens, blur_mm) = page_reach(doc, page);
+    let margin = if lens {
+        h
+    } else {
+        ((blur_mm * opts.view.zoom).round() as u32 * 3 + 4).div_ceil(16) * 16
+    };
+    let (ry0, ry1) = (y0.saturating_sub(margin), (y1 + margin).min(h));
+    let mut o = opts.clone();
+    o.width = w;
+    o.height = ry1 - ry0;
+    o.view.origin_y = opts.view.origin_y - ry0 as f64;
+    let part = render_page(doc, page, &o)?;
+    let mut out = Pixmap::new(w, y1 - y0)?;
+    let row = w as usize * 4;
+    let from = (y0 - ry0) as usize * row;
+    let len = (y1 - y0) as usize * row;
+    out.data_mut()
+        .copy_from_slice(part.data().get(from..from + len)?);
+    Some(out)
+}
+
 /// The reduced level of a picture to draw it from, given `m` from its
 /// pixels to the screen: each level halves its sides, and the one
 /// chosen is drawn at between half and the whole of its pixels' size
