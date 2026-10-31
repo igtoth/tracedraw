@@ -9,7 +9,7 @@
 
 | Control | Default | Range |
 |---|---|---|
-| Trace type | the menu item's (Outline, Centerline) | the Image type list follows: Technical illustration and Line drawing for Centerline; Line art, Logo, Detailed logo, Clipart, Low quality image, High quality image for Outline |
+| Trace type | the menu item's (Outline, Centerline) | the Image type list follows: Technical illustration and Line drawing for Centerline; Line art, Logo, Detailed logo, Clipart, Low quality image, High quality image, Optimized for Outline |
 | Image type | the menu item's | choosing one sets Detail, Smoothing, Corner smoothness, Colors and the colour mode from the preset, with the choices of Options > Global > Bitmap Tracing |
 | Detail | per preset | 0..100 (tick marks every 10, the value in the box at the right) |
 | Smoothing | 25 | 0..100 |
@@ -106,7 +106,11 @@ pane, the wireframe and the counts take the result when it comes in.
 - The quick look traces the art alone: the box of the picture's opaque
   pixels, its transparent margins cut off, shrunk to at most 240 pixels
   (360 where it is the preview's last result), and the curves are moved
-  back to where the art lies. A drawing with wide transparent margins
+  back to where the art lies, across and down each at the scale the copy
+  really has (a line a pixel wide keeps its length). The quick look
+  traces at the settings' own detail: the Optimized preset's search is
+  made for the whole picture only (on the desktop its trace follows at
+  once; in the browser OK makes it), so a frame never runs the search. A drawing with wide transparent margins
   kept only a fraction of the copy before, and its preview came out in
   blobs.
 - In the browser (no threads) the quick look is made in the frame; the
@@ -198,7 +202,8 @@ can be undone.
    of anti-aliased and compressed edges take no places of their own; the
    colours of the palette of every pixel that lie further than 56 from
    all of those and not between the two nearest (a hairline of a colour
-   of its own) are added, up to a quarter more.
+   of its own) take up to a quarter of the places, the flat colours the
+   rest: never more colours than Number of colors.
    Split colours (#611): in flat art (the 8 commonest colours cover 85 %
    of the pixels) two colours of the palette nearer each other than 40
    (RGB distance) and than the sum of their spreads (the root mean
@@ -219,7 +224,11 @@ can be undone.
    keeps its solid member's colour; rounds repeat until nothing joins.
    Then each palette colour moves onto the commonest exact colour of its
    pixels when that is within 16, so a black traces as #000000 and the
-   art keeps its own colours.
+   art keeps its own colours. Black and white is left out of both: its
+   colours stay #000000 and #FFFFFF. The colours no pixel has any more
+   then leave the palette, so a background colour specified or picked,
+   and the colours merged on the Colors tab, are matched among the
+   trace's own colours.
 2. Edges (#611, #1250, off at detail 95 and up, where the specks stay
    too): a pixel is flat when its 8 neighbours share its colour, and a
    colour is a colour of its own when at least half its pixels are flat;
@@ -320,7 +329,10 @@ the samples' sides, so a finer detail is chosen while it draws the
 picture better for the nodes it adds, and no further. Above 85 the
 cleaning of edges and specks stops and the nodes multiply. On the
 desktop the details are traced at once, a thread each; in the browser
-one after the other.
+one after the other, and only 60, 70 and 80. A search whose picture or
+settings changed before it ended (another image type, a detail set by
+hand, Reset, a step undone) is not put in. Enter on the focused Best
+optimization button starts the search and leaves the dialog open.
 
 Centreline mode: Zhang-Suen thinning, then the skeleton is traced into
 polylines, smoothed (Catmull-Rom) and output as curves with a stroke
@@ -378,7 +390,11 @@ width equal to the mean local thickness.
   OK and Cancel lie under the settings column, right of Best
   optimization; a click on it finds a detail of the search's list, off
   the interface thread, as a step the arrows undo.
-- `pick_drag_tests::the_optimized_image_type_greys_the_detail`.
+- `pick_drag_tests::the_optimized_image_type_greys_the_detail`,
+  `pick_drag_tests::a_stale_best_optimization_is_dropped`.
+- `trace::tests::black_and_white_stays_pure`,
+  `trace::tests::a_specified_background_is_removed_after_shades_join`,
+  `trace::tests::the_palette_keeps_to_the_number_of_colours`.
 - `trace_preview::tests::the_quick_look_traces_the_art_without_its_margins`.
 - `trace::tests::halftone_dots_stay_and_the_regions_below_are_whole`: a
   halftone heart (3 pixel yellow-green dots on teal in a black ring, on

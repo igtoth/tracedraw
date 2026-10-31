@@ -295,6 +295,7 @@ mostrare le vostre scorciatoie; vedere
 | [[menu.bitmaps.trace_clipart]] | [Tracing bitmaps](../bitmaps/tracing.md) |
 | [[menu.bitmaps.trace_low_quality]] | [Tracing bitmaps](../bitmaps/tracing.md) |
 | [[menu.bitmaps.trace_high_quality]] | [Tracing bitmaps](../bitmaps/tracing.md) |
+| [[menu.bitmaps.trace_optimized]] | [Tracing bitmaps](../bitmaps/tracing.md) |
 | [[menu.bitmaps.plugins]] | [Bitmap](../bitmaps/index.md) |
 | [[menu.bitmaps.bitmap_mask]] | [Masking colors out of bitmaps](../bitmaps/bitmap-mask.md) |
 

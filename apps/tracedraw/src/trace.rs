@@ -326,7 +326,13 @@ pub fn trace_unless(img: &RgbaImage, s: &Settings, cancel: Option<&Cancel>) -> O
 
 /// The details [`optimize`] tries, coarse to fine. Above 85 the cleaning
 /// of edges and specks stops and the curves multiply.
+#[cfg(not(target_arch = "wasm32"))]
 const OPTIMIZE_DETAILS: [f64; 5] = [50.0, 60.0, 70.0, 80.0, 85.0];
+/// In the browser the details are traced one after the other, in the
+/// frame: the three in the middle, where the search lands on nearly every
+/// picture.
+#[cfg(target_arch = "wasm32")]
+const OPTIMIZE_DETAILS: [f64; 3] = [60.0, 70.0, 80.0];
 
 /// The side of the samples [`optimize`] traces, pixels, and how many.
 const SAMPLE_SIDE: u32 = 200;
@@ -733,15 +739,26 @@ fn outline(img: &RgbaImage, s: &Settings, cancel: Option<&Cancel>) -> Option<Vec
     // one colour, in any picture: each would be a curve of its own.
     // Rounds until nothing joins: shades joined change which others are
     // side by side.
+    // Black and white stays #000000 and #FFFFFF: its two colours are
+    // the mode's, not the picture's.
     let mut palette = palette;
-    for _ in 0..4 {
-        let before = labels.clone();
-        palette = merge_near_colors(&mut labels, w, h, palette, &colors, near_reach(s.detail));
-        if labels == before || cancelled(cancel) {
-            break;
+    if !black_white {
+        for _ in 0..4 {
+            let before = labels.clone();
+            palette = merge_near_colors(&mut labels, w, h, palette, &colors, near_reach(s.detail));
+            if labels == before || cancelled(cancel) {
+                break;
+            }
         }
+        snap_to_commonest(&labels, &colors, &mut palette);
     }
-    snap_to_commonest(&labels, &colors, &mut palette);
+    // Colours no pixel has any more (joined into others) leave the
+    // palette, so the background colour specified, picked with the
+    // eyedropper or merged on the Colors tab is matched among the colours
+    // of the trace only: a joined shade left behind stood nearer the
+    // colour picked than the colour its pixels took, and nothing was
+    // removed.
+    let palette = compact_palette(&mut labels, palette);
     if speck_area(s.detail) > 1 {
         settle_edges(&mut labels, w, h, &palette, &colors, cancel);
         dissolve_fringes(&mut labels, w, h, &palette, &colors, cancel)?;
@@ -1455,6 +1472,34 @@ fn near_reach(detail: f64) -> f64 {
     } else {
         10.0 + (100.0 - detail.clamp(0.0, 100.0)) * 0.5
     }
+}
+
+/// `palette` without the colours no label uses, the labels renumbered to
+/// match (transparent pixels stay `usize::MAX`).
+fn compact_palette(labels: &mut [usize], palette: Vec<[u8; 3]>) -> Vec<[u8; 3]> {
+    let mut used = vec![false; palette.len()];
+    for l in labels.iter() {
+        if let Some(u) = used.get_mut(*l) {
+            *u = true;
+        }
+    }
+    if used.iter().all(|u| *u) {
+        return palette;
+    }
+    let mut to = vec![usize::MAX; palette.len()];
+    let mut kept = Vec::new();
+    for (i, c) in palette.into_iter().enumerate() {
+        if used[i] {
+            to[i] = kept.len();
+            kept.push(c);
+        }
+    }
+    for l in labels.iter_mut() {
+        if let Some(t) = to.get(*l) {
+            *l = *t;
+        }
+    }
+    kept
 }
 
 /// How many pixel edges two shades must share, per pixel of the smaller,
@@ -2322,17 +2367,20 @@ pub fn art_palette(img: &RgbaImage, n: usize, cancel: Option<&Cancel>) -> Option
     // Colours of the art too thin to be flat anywhere (a hairline of a
     // colour of its own) come from the palette of every pixel: those far
     // from every flat colour and not the blend of the two nearest them,
-    // as an anti-aliased edge's pixels are.
-    let mut palette = median_cut_of(flat, n, cancel)?;
-    let base = palette.clone();
-    for c in every {
-        if palette.len() >= n + n / 4 {
-            break;
-        }
-        if unexplained(c, &base) {
-            palette.push(c);
-        }
+    // as an anti-aliased edge's pixels are. They take up to a quarter of
+    // the places, the flat colours the rest: never more colours than
+    // asked for.
+    let base = median_cut_of(flat.clone(), n, cancel)?;
+    let extra: Vec<[u8; 3]> = every
+        .into_iter()
+        .filter(|c| unexplained(*c, &base))
+        .take(n / 4)
+        .collect();
+    if extra.is_empty() {
+        return Some(base);
     }
+    let mut palette = median_cut_of(flat, n - extra.len(), cancel)?;
+    palette.extend(extra);
     Some(palette)
 }
 
@@ -4079,6 +4127,90 @@ mod tests {
             }
         }
         assert!(wrong_share(&disc, &dotted, None).unwrap() > 0.0);
+    }
+
+    /// Black and white traces are #000000 and #FFFFFF, whatever the ink
+    /// and paper of the scan: the mode's two colours are not moved onto
+    /// the picture's commonest shades.
+    #[test]
+    fn black_and_white_stays_pure() {
+        let img: RgbaImage = ImageBuffer::from_fn(100, 100, |x, y| {
+            if (30..70).contains(&x) && (30..70).contains(&y) {
+                Rgba([6, 6, 8, 255])
+            } else {
+                Rgba([250, 250, 250, 255])
+            }
+        });
+        let mut s = Preset::LineArt.settings();
+        s.remove = Remove::None;
+        let colors: Vec<[u8; 3]> = color_counts(&trace(&img, &s))
+            .into_iter()
+            .map(|(c, _)| c)
+            .collect();
+        assert!(
+            colors
+                .iter()
+                .all(|c| *c == [0, 0, 0] || *c == [255, 255, 255]),
+            "{colors:?}"
+        );
+    }
+
+    /// A background colour specified (or picked with the eyedropper) is
+    /// matched among the colours of the trace: on noisy paper whose shades
+    /// joined into one, white specified still takes the paper out. Before,
+    /// a joined shade left in the palette stood nearer white than the
+    /// paper's colour, matched no pixel, and the page was traced.
+    #[test]
+    fn a_specified_background_is_removed_after_shades_join() {
+        let mut noise = noise_source(4);
+        let img: RgbaImage = ImageBuffer::from_fn(120, 120, |x, y| {
+            if (40..80).contains(&x) && (40..80).contains(&y) {
+                Rgba([0, 0, 0, 255])
+            } else {
+                let v = (250 + noise()).clamp(0, 255) as u8;
+                Rgba([v, v, v, 255])
+            }
+        });
+        let mut s = Preset::Clipart.settings();
+        s.remove = Remove::Background;
+        s.background = Some([255, 255, 255]);
+        let t = trace(&img, &s);
+        let colors: Vec<[u8; 3]> = color_counts(&t).into_iter().map(|(c, _)| c).collect();
+        assert_eq!(colors, vec![[0, 0, 0]], "the paper is gone");
+    }
+
+    /// Never more colours than asked for: flat art with hairlines of
+    /// colours of their own, traced in 8 colours, keeps 8 at most.
+    #[test]
+    fn the_palette_keeps_to_the_number_of_colours() {
+        let lines: [[u8; 3]; 6] = [
+            [220, 30, 40],
+            [30, 160, 60],
+            [40, 60, 220],
+            [230, 200, 20],
+            [160, 40, 200],
+            [20, 200, 210],
+        ];
+        let img: RgbaImage = ImageBuffer::from_fn(200, 200, |x, y| {
+            let band = (y / 30) as usize;
+            if y % 30 < 2 && band < lines.len() {
+                let c = lines[band];
+                Rgba([c[0], c[1], c[2], 255])
+            } else if x < 100 {
+                Rgba([0, 0, 0, 255])
+            } else if x < 150 {
+                Rgba([128, 128, 128, 255])
+            } else {
+                Rgba([255, 255, 255, 255])
+            }
+        });
+        let mut s = Preset::Clipart.settings();
+        s.colors = 8;
+        s.remove = Remove::None;
+        let n = color_counts(&trace(&img, &s)).len();
+        assert!(n <= 8, "{n} colours");
+        let palette = art_palette(&img, 8, None).unwrap();
+        assert!(palette.len() <= 8, "{palette:?}");
     }
 
     /// Holes holding only what may be filled are filled; a hole with one

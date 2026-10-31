@@ -207,10 +207,17 @@ pub fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &m
     let mut best = false;
     let dragging = ctx.input(|i| i.pointer.any_down());
     // Best optimization's settings, once found: the detail it chose, as
-    // a step of its own the arrows undo.
+    // a step of its own the arrows undo. Only while the picture and the
+    // settings are still the ones it searched for: a detail found for
+    // other settings (another image type, a detail set by hand, Reset or
+    // a step undone meanwhile) would undo what the user did since.
     if let Some(found) = app.trace_live.optimized() {
-        st.settings.detail = found.detail;
-        st.settings.optimize = false;
+        let same = selected_bitmap(app).is_some_and(|(shape, _, _)| shape == found.shape)
+            && found.from == st.settings;
+        if same {
+            st.settings.detail = found.best.detail;
+            st.settings.optimize = false;
+        }
     }
     let optimizing = app.trace_live.optimizing();
     let can_optimize = !st.settings.centerline && selected_bitmap(app).is_some();
@@ -283,10 +290,17 @@ pub fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &m
     if !dragging && !arrowed {
         st.commit();
     }
+    // Enter on the focused Best optimization button presses it, not OK
+    // too: the dialog stays open for the search.
+    if best && ok {
+        ok = false;
+        *close = false;
+    }
     if best && can_optimize {
         if let Some((shape, _, png)) = selected_bitmap(app) {
             if let Some(image) = app.trace_live.image(shape, &png) {
-                app.trace_live.optimize(ctx, image, st.settings.clone());
+                app.trace_live
+                    .optimize(ctx, shape, image, st.settings.clone());
             }
         }
     }

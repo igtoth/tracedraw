@@ -125,6 +125,17 @@ pub const DEFER_FULL_OVER: u64 = 400_000;
 struct Search {
     cancel: Arc<AtomicBool>,
     rx: Receiver<Option<Settings>>,
+    /// The picture searched and the settings the search started from.
+    shape: ShapeId,
+    from: Settings,
+}
+
+/// What Best optimization found: the settings it started from on the
+/// picture `shape`, and the settings that trace it best.
+pub struct Found {
+    pub shape: ShapeId,
+    pub from: Settings,
+    pub best: Settings,
 }
 
 /// The live preview's state, kept on the app while the dialog is open.
@@ -334,7 +345,13 @@ impl Live {
     /// starting from `settings` ([`trace::optimize`]), off the interface
     /// thread; [`Live::optimized`] gives them once found. A search
     /// already running is stopped.
-    pub fn optimize(&mut self, ctx: &egui::Context, image: Arc<RgbaImage>, settings: Settings) {
+    pub fn optimize(
+        &mut self,
+        ctx: &egui::Context,
+        shape: ShapeId,
+        image: Arc<RgbaImage>,
+        settings: Settings,
+    ) {
         if let Some(s) = &self.search {
             s.cancel.store(true, Ordering::Relaxed);
         }
@@ -342,6 +359,7 @@ impl Live {
         let (tx, rx) = mpsc::channel();
         let flag = cancel.clone();
         let repaint = ctx.clone();
+        let from = settings.clone();
         let work = move || {
             let found = trace::optimize(&image, &settings, Some(&flag));
             let _ = tx.send(found);
@@ -351,17 +369,26 @@ impl Live {
         std::thread::spawn(work);
         #[cfg(target_arch = "wasm32")]
         work();
-        self.search = Some(Search { cancel, rx });
+        self.search = Some(Search {
+            cancel,
+            rx,
+            shape,
+            from,
+        });
     }
 
-    /// The settings Best optimization found, once: `None` while it runs
-    /// or when none runs.
-    pub fn optimized(&mut self) -> Option<Settings> {
+    /// What Best optimization found, once: `None` while it runs, when
+    /// none runs, or when it was stopped.
+    pub fn optimized(&mut self) -> Option<Found> {
         let search = self.search.as_ref()?;
         match search.rx.try_recv() {
             Ok(found) => {
-                self.search = None;
-                found
+                let search = self.search.take()?;
+                found.map(|best| Found {
+                    shape: search.shape,
+                    from: search.from,
+                    best,
+                })
             }
             Err(TryRecvError::Empty) => None,
             Err(TryRecvError::Disconnected) => {
@@ -415,9 +442,15 @@ impl Live {
 }
 
 /// The art of `img` (its opaque pixels' box and a pixel round it) at most
-/// `side` across, with the scale it was shrunk by and the box's top left
-/// corner in `img`. A picture with nothing opaque is shrunk whole.
-pub fn art_shrink(img: &RgbaImage, side: u32) -> (RgbaImage, f64, (u32, u32)) {
+/// `side` across, the scale it was shrunk by, and the map from the
+/// copy's pixels to the picture's shrunk as much (each side of the copy
+/// being whole pixels, across and down are scaled each on its own, so a
+/// line one pixel wide and a thousand long lands where it lies). A
+/// picture with nothing opaque is shrunk whole.
+pub fn art_shrink(
+    img: &RgbaImage,
+    side: u32,
+) -> (RgbaImage, f64, tracedraw_core::geometry::Affine) {
     let (w, h) = img.dimensions();
     let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0, 0);
     for (x, y, p) in img.enumerate_pixels() {
@@ -438,19 +471,28 @@ pub fn art_shrink(img: &RgbaImage, side: u32) -> (RgbaImage, f64, (u32, u32)) {
     );
     let (bw, bh) = (x1 - x0 + 1, y1 - y0 + 1);
     let scale = (side as f64 / bw.max(bh).max(1) as f64).min(1.0);
-    let cut = image::imageops::crop_imm(img, x0, y0, bw, bh).to_image();
-    if scale >= 1.0 {
-        return (cut, 1.0, (x0, y0));
-    }
-    let small = image::imageops::resize(
-        &cut,
-        ((bw as f64 * scale).round() as u32).max(1),
-        ((bh as f64 * scale).round() as u32).max(1),
-        image::imageops::FilterType::Triangle,
-    );
-    // The scale the copy really has, its sides being whole pixels.
-    let scale = small.width() as f64 / bw as f64;
-    (small, scale, (x0, y0))
+    // Shrunk from the picture itself (a view of the box), not a copy.
+    let view = image::imageops::crop_imm(img, x0, y0, bw, bh);
+    let small = if scale >= 1.0 {
+        view.to_image()
+    } else {
+        image::imageops::resize(
+            &*view,
+            ((bw as f64 * scale).round() as u32).max(1),
+            ((bh as f64 * scale).round() as u32).max(1),
+            image::imageops::FilterType::Triangle,
+        )
+    };
+    let (sw, sh) = (small.width().max(1) as f64, small.height().max(1) as f64);
+    let map = tracedraw_core::geometry::Affine::new([
+        bw as f64 * scale / sw,
+        0.0,
+        0.0,
+        bh as f64 * scale / sh,
+        x0 as f64 * scale,
+        y0 as f64 * scale,
+    ]);
+    (small, scale, map)
 }
 
 fn color_image(img: &RgbaImage) -> ColorImage {
@@ -550,21 +592,20 @@ fn run(req: Request, cancel: &AtomicBool, mut send: impl FnMut(Outcome), defer_f
         } else {
             QUICK_SIDE_DEFERRED
         };
-        let (small, scale, (x0, y0)) = art_shrink(&req.image, side);
-        let Some(mut raw) = trace::trace_unless(&small, &settings, Some(cancel)) else {
+        let (small, scale, map) = art_shrink(&req.image, side);
+        // The quick look traces at the settings' own detail: the Optimized
+        // preset's search is the whole picture's to make (on the desktop
+        // the whole picture's trace follows at once; in the browser OK
+        // makes it), so the first look never waits on it and a frame in
+        // the browser traces one copy, not one per detail tried.
+        let mut quick = settings.clone();
+        quick.optimize = false;
+        let Some(mut raw) = trace::trace_unless(&small, &quick, Some(cancel)) else {
             return;
         };
         let stroke_px = trace::last_stroke_width_px();
-        let shift = tracedraw_core::geometry::Affine::new([
-            1.0,
-            0.0,
-            0.0,
-            1.0,
-            x0 as f64 * scale,
-            y0 as f64 * scale,
-        ]);
         for t in &mut raw {
-            t.path = shift * t.path.clone();
+            t.path = map * t.path.clone();
         }
         let size = (
             ((w as f64 * scale).round() as u32).max(1),
@@ -685,9 +726,22 @@ mod tests {
         );
         // A picture opaque to its edges is shrunk whole, its background
         // found on its edge as before.
-        let (small, scale, corner) = art_shrink(&disc(600), 240);
-        assert_eq!((small.dimensions(), corner), ((240, 240), (0, 0)));
+        let (small, scale, map) = art_shrink(&disc(600), 240);
+        assert_eq!(small.dimensions(), (240, 240));
         assert!((scale - 0.4).abs() < 1e-9);
+        assert_eq!(map.as_coeffs(), [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+        // A line a pixel wide and a thousand long: across and down are
+        // mapped each at its own scale, so it is drawn its full length.
+        let line = RgbaImage::from_fn(1000, 1000, |x, _| {
+            if (500..502).contains(&x) {
+                image::Rgba([0, 0, 0, 255])
+            } else {
+                image::Rgba([0, 0, 0, 0])
+            }
+        });
+        let (small, scale, map) = art_shrink(&line, 360);
+        let tall = map * tracedraw_core::geometry::Point::new(0.0, small.height() as f64);
+        assert!((tall.y - 1000.0 * scale).abs() < 1.0, "{tall:?} at {scale}");
     }
 
     /// Where the whole picture waits for OK (the browser), a large

@@ -13739,6 +13739,42 @@ fn trace_ok_is_at_the_right_and_best_optimization_sets_the_detail() {
     }
 }
 
+/// A Best optimization found after the settings changed is not put in:
+/// the detail set by hand meanwhile stays.
+#[test]
+fn a_stale_best_optimization_is_dropped() {
+    let (ctx, mut app, _) = trace_setup(image::RgbaImage::from_fn(1200, 1200, |x, y| {
+        let d = ((x as f32 - 600.0).powi(2) + (y as f32 - 600.0).powi(2)).sqrt();
+        let v = if d < 400.0 && (x / 7 + y / 9) % 3 == 0 {
+            0
+        } else {
+            255
+        };
+        image::Rgba([v, v, v, 255])
+    }));
+    click_at(
+        &ctx,
+        &mut app,
+        trace_rect(&ctx, "optimize").center(),
+        Modifiers::NONE,
+    );
+    assert!(app.trace_live.optimizing());
+    if let crate::ui::dialogs::Dialog::Trace(st) = &mut app.dialog {
+        st.settings.detail = 33.0;
+    }
+    let t0 = std::time::Instant::now();
+    while app.trace_live.optimizing() {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        assert!(
+            t0.elapsed() < std::time::Duration::from_secs(60),
+            "never found"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(3));
+    }
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(trace_state(&app).settings.detail, 33.0);
+}
+
 /// The Optimized image type chooses the detail for each picture: the
 /// Detail slider is greyed (a click on it changes nothing) and the trace
 /// is made with the detail found.

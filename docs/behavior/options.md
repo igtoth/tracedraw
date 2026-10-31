@@ -163,8 +163,8 @@ starts at the CDR type for a drawing without a file (#613).
 
 ### Bitmap Tracing
 
-Quick Trace uses (`tracing`): one of the eight presets (Clipart by
-default). Every trace starts with: Remove background (on) and Delete
+Quick Trace uses (`tracing`): one of the nine presets (Optimized by
+default, which chooses the detail for each picture; Clipart before). Every trace starts with: Remove background (on) and Delete
 original image (off); Quick Trace and the Trace dialog's presets take
 them, and the dialog can still change them for one trace.
 
