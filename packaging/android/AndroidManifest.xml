@@ -32,14 +32,26 @@
         android:hasCode="true"
         android:extractNativeLibs="true"
         android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
+        <!-- The editor cannot start again inside its process (one winit
+             event loop per process), so the system should not relaunch
+             the activity: the configuration changes the editor follows
+             by itself are declared. The screen density is not (a new
+             density starts the editor afresh at its new scale), and a
+             change of the system's resource overlays (wallpaper colours,
+             icon shapes, display cutout) cannot be declared: either
+             relaunches the activity, which then ends the process once
+             the drawings are backed up (TraceDrawActivity.onDestroy);
+             stateNotNeeded makes the system keep the activity and start
+             it again in a new process instead of closing it. -->
         <activity
             android:name="dev.tracedraw.app.TraceDrawActivity"
             android:label="TraceDraw"
             android:exported="true"
             android:launchMode="singleTask"
+            android:stateNotNeeded="true"
             android:screenOrientation="unspecified"
             android:windowSoftInputMode="adjustResize"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|screenLayout|smallestScreenSize|uiMode|locale|layoutDirection|navigation">
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|screenLayout|smallestScreenSize|uiMode|locale|layoutDirection|navigation|touchscreen|mcc|mnc|fontScale|fontWeightAdjustment|colorMode|grammaticalGender">
             <!-- The library the activity loads: lib/arm64-v8a/libtracedraw.so. -->
             <meta-data android:name="android.app.lib_name" android:value="tracedraw" />
             <intent-filter>

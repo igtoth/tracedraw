@@ -8,7 +8,9 @@
 //! activity's Java methods ([`documents`], [`clipboard`]), and text from
 //! the on-screen keyboard's input methods through an invisible view of
 //! the activity ([`keyboard`]); printing and
-//! external programs are not available (docs/behavior/android.md).
+//! external programs are not available (docs/behavior/android.md). When
+//! the system relaunches the activity, the process ends once the drawings
+//! are backed up and the system starts it again ([`ending`]).
 
 use android_activity::AndroidApp;
 use jni::refs::Reference as _;
@@ -68,6 +70,8 @@ fn android_main(app: AndroidApp) {
     log_panics();
     prepare_folders(&app);
     ACTIVITY.store(app.activity_as_ptr() as usize, Ordering::Release);
+    ending::keep(&app);
+    ending::register_natives();
     documents::register_natives();
     keyboard::register_natives();
     tracedraw_text::install();
@@ -574,6 +578,82 @@ pub mod keyboard {
         if done.is_none() {
             log::error!(
                 "the on-screen keyboard types Latin keys only: native methods not registered"
+            );
+        }
+    }
+}
+
+/// The end of the activity (`TraceDrawActivity.onDestroy`): the system
+/// relaunches it on a change of its resource overlays (configuration
+/// change `0x80000000`, which no `configChanges` entry covers; an
+/// Android 14 emulator does it right after booting) or of the screen
+/// density, or it is finished. `NativeActivity` then waits for
+/// [`android_main`] to return, which it never does (winit ignores the
+/// destroy and runs one event loop per process), so the app froze with
+/// the system's starting window on the screen. The activity instead ends
+/// the process once this thread has given up the window: eframe's save
+/// on suspend, which backs the drawings up, runs before that.
+pub mod ending {
+    use super::*;
+    use jni::objects::JObject;
+    use jni::sys::jlong;
+    use jni::{jni_str, EnvUnowned};
+    use std::time::Duration;
+
+    /// The app, whose window [`native_await_window_gone`] watches.
+    static APP: OnceLock<AndroidApp> = OnceLock::new();
+
+    /// Keep the app for the end of the activity.
+    pub fn keep(app: &AndroidApp) {
+        let _ = APP.set(app.clone());
+    }
+
+    /// `TraceDrawActivity.nativeAwaitWindowGone`: return once the
+    /// editor's thread holds no window (it has handled the window's end,
+    /// backup included, or never had one), or after `timeout_ms`.
+    extern "system" fn native_await_window_gone<'local>(
+        _env: EnvUnowned<'local>,
+        _this: JObject<'local>,
+        timeout_ms: jlong,
+    ) {
+        let timeout = Duration::from_millis(timeout_ms.clamp(0, 60_000) as u64);
+        let gone = crate::android_end::wait_until(
+            || APP.get().is_none_or(|app| app.native_window().is_none()),
+            timeout,
+            Duration::from_millis(10),
+        );
+        if gone {
+            log::info!("the activity ends: the window is gone and the drawings are backed up");
+        } else {
+            log::warn!(
+                "the activity ends: the window was still held after {} ms",
+                timeout.as_millis()
+            );
+        }
+    }
+
+    /// Bind the native method of the activity's end.
+    pub fn register_natives() {
+        let done = with_activity("register end natives", |env, activity| {
+            let class = env.get_object_class(activity)?;
+            let methods = [
+                // SAFETY: the function has the instance-method shape of
+                // its signature: an unowned env, `this` and a long,
+                // returning nothing.
+                unsafe {
+                    jni::NativeMethod::from_raw_parts(
+                        jni_str!("nativeAwaitWindowGone"),
+                        jni_str!("(J)V"),
+                        native_await_window_gone as *mut std::ffi::c_void,
+                    )
+                },
+            ];
+            // SAFETY: as above; the class is the activity's own.
+            unsafe { env.register_native_methods(&class, &methods) }
+        });
+        if done.is_none() {
+            log::error!(
+                "a relaunch ends the app without waiting for the backup: native methods not registered"
             );
         }
     }

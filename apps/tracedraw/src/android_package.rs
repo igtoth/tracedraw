@@ -329,4 +329,81 @@ mod tests {
         }
         assert!(BUILD.contains("find packaging/android/java -name '*.java'"));
     }
+
+    /// A relaunch of the activity by the system (Android 14 emulators in
+    /// CI switch a resource overlay right after booting, which relaunches
+    /// every activity whatever its manifest declares) froze
+    /// the app for good: `NativeActivity.onDestroy` waits for
+    /// `android_main` to return, which it never does. The manifest
+    /// declares every configuration change the editor follows and keeps
+    /// the activity when its process ends (`stateNotNeeded`); the
+    /// activity ends the process once the editor's thread has given up
+    /// the window, which it does after the backup; the bridge registers
+    /// that wait; the emulator check relaunches the app on purpose and
+    /// wants it back.
+    #[test]
+    fn a_relaunch_ends_the_process_after_the_backup() {
+        const EMULATOR_CHECK: &str = include_str!("../../../scripts/android/emulator_check.sh");
+        assert!(MANIFEST.contains("android:stateNotNeeded=\"true\""));
+        let changes = MANIFEST
+            .split("android:configChanges=\"")
+            .nth(1)
+            .and_then(|rest| rest.split('"').next())
+            .expect("the activity declares its configuration changes");
+        for change in [
+            "orientation",
+            "screenSize",
+            "smallestScreenSize",
+            "screenLayout",
+            "keyboard",
+            "keyboardHidden",
+            "navigation",
+            "touchscreen",
+            "uiMode",
+            "locale",
+            "layoutDirection",
+            "mcc",
+            "mnc",
+            "fontScale",
+            "fontWeightAdjustment",
+            "colorMode",
+            "grammaticalGender",
+        ] {
+            assert!(
+                changes.split('|').any(|c| c == change),
+                "configChanges lacks {change:?}"
+            );
+        }
+        assert!(ACTIVITY.contains("private native void nativeAwaitWindowGone(long timeoutMs);"));
+        let end = ACTIVITY
+            .split("protected void onDestroy() {")
+            .nth(1)
+            .expect("the activity has its own onDestroy");
+        let waits = end.find("nativeAwaitWindowGone(BACKUP_WAIT_MS)");
+        let kills = end.find("Process.killProcess(Process.myPid())");
+        let destroys = end.find("super.onDestroy();");
+        assert!(waits.is_some() && kills.is_some() && destroys.is_some());
+        // The wait and the end run on a thread of their own, started
+        // before NativeActivity's onDestroy blocks the activity's thread.
+        assert!(end.contains("end.start();"));
+        assert!(end.find("end.start();") < destroys);
+        assert!(end.contains("the activity is relaunched: the process ends"));
+        assert!(EMULATOR_CHECK.contains("the activity is relaunched: the process ends"));
+        assert!(BRIDGE.contains("jni_str!(\"nativeAwaitWindowGone\")"));
+        assert!(BRIDGE.contains("jni_str!(\"(J)V\")"));
+        assert!(BRIDGE.contains("ending::keep(&app);"));
+        assert!(BRIDGE.contains("ending::register_natives();"));
+        assert!(BRIDGE.contains("app.native_window().is_none()"));
+        for needed in [
+            "cmd overlay list android",
+            "relaunch_with enable",
+            "relaunch_with disable",
+            "cmd overlay \"$1\" --user 0 \"$overlay\"",
+        ] {
+            assert!(
+                EMULATOR_CHECK.contains(needed),
+                "scripts/android/emulator_check.sh lacks {needed:?}"
+            );
+        }
+    }
 }

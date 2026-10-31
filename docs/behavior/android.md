@@ -39,6 +39,7 @@ the owner does to publish it and what to test on a tablet first.
 | Temporary files (auto-backups, crash recovery) | the system's temporary folder | `tmp` in the app's private folder (`TMPDIR` set by `android_main`: the system's default, `/data/local/tmp`, is closed to apps) |
 | Help | the user Help in the browser | the same pages open in the browser |
 | Errors | a message box and the log file | the system log only: `adb logcat -s tracedraw` |
+| Configuration changes (rotation, window size, keyboard, dark mode, language, font size) | the window follows them | the same: the activity declares them (`android:configChanges`), so the system does not relaunch it. A relaunch the manifest cannot prevent (a new screen density, a change of the system's resource overlays: wallpaper colours, icon shapes, display cutout) ends the process once the drawings are backed up, and the system starts the app again in a new process, which offers them (see "Relaunches" below) |
 
 Pen pressure is #850 (another change): `android-activity` exposes
 `MotionEvent` pressure per pointer, so when winit passes it on the
@@ -181,7 +182,12 @@ CI's `android-emulator` job starts the app on Android emulators with
 KVM on every push, Android 11 (API 30) and Android 14 (API 34), through
 `scripts/android/emulator_check.sh`: it installs the x86_64 APK, starts
 the launcher activity and fails unless, 45 s later, the app's process is
-still the one that started, the app has the focus, the system log has
+still the one that started (or, after a relaunch by the system that the
+app logged, the one the system started again), then switches the first
+display cutout overlay the emulator offers on and off again (`cmd
+overlay`, each switch relaunches the activity) and wants the app back in
+a new process that draws its first frame each time, and fails unless the
+app has the focus, the system log has
 no Java `FATAL EXCEPTION`, native crash (`Fatal signal`, a tombstone),
 Rust panic (`panicked at`, `RustPanic`, the app's own `panic:` line) or
 ANR, the app logged its first frame and did not find zero system fonts,
@@ -190,7 +196,11 @@ no colour on more than 97 % of the screen, at least 16 colours). The
 screenshot, the whole system log, the app's lines and the crash log are
 kept as the `android-emulator-api30` and `android-emulator-api34`
 artifacts; the screenshot shows the editor with its menus, toolbars,
-toolbox, the Welcome Screen and the docker tabs.
+toolbox, the Welcome Screen and the docker tabs. When the check fails on
+GitHub Actions, it also writes the crash lines, the app's last log
+lines, the activity's events, the focus and, for a process still there,
+its main thread's Java stack as annotations on the job, which can be
+read without downloading the artifacts.
 
 The x86_64 library runs natively there. The ARM64 library cannot be
 checked this way: the emulator's ARM translation (Android 11 and 14
@@ -207,6 +217,42 @@ the app asks for OpenGL ES only, `gpu::ANDROID_BACKENDS`), no system
 fonts (the font database looks in no folder on Android), the temporary
 folder (`/data/local/tmp` is closed to apps) and the update question at
 the first start (Google Play updates the app).
+
+## Relaunches
+
+The system relaunches an activity (destroys it and makes a new one) on
+any configuration change it does not declare in `android:configChanges`,
+and always on a change of the system's resource overlays (configuration
+change `0x80000000`, assets paths: wallpaper colours, icon shapes, a
+display cutout switched on; no manifest entry covers it). Android 14
+emulators do that once right after booting, and about one start in four
+in CI landed on it. A `NativeActivity` cannot be relaunched in place:
+its `onDestroy` waits for `android_main` to return, which it never does
+(winit ignores the destroy, and runs one event loop per process, so the
+editor could not start again in the same process anyway). The app froze
+for good on the system's starting window, never drawing, with the
+activity's thread blocked.
+
+Now:
+
+- The manifest declares every configuration change the editor follows
+  by itself (orientation, screen size and layout, keyboard, navigation,
+  touch screen, UI mode, locale, layout direction, MCC and MNC, font
+  scale and weight, colour mode, grammatical gender), so those never
+  relaunch it. The screen density is left out: a new density starts the
+  editor afresh at its scale.
+- `TraceDrawActivity.onDestroy` starts a thread and then calls
+  `NativeActivity.onDestroy`, which first takes the window from the
+  editor: winit's Suspended, on which eframe's save backs the drawings
+  up (`Shell::save`, #1395). The thread waits (`nativeAwaitWindowGone`,
+  `android::ending`, at most 10 s) until the editor's thread holds no
+  window any more, logs `the activity is relaunched: the process ends`
+  and ends the process.
+- `android:stateNotNeeded="true"` makes the system keep the activity
+  when its process ends and start it again in a new process; the new
+  start offers the backed-up drawings as after any end of the app it
+  was not told about. A finished activity (not relaunched) ends the
+  same way and stays closed.
 
 ## How it is wired
 
@@ -228,7 +274,8 @@ the first start (Google Play updates the app).
   answer queue, `register_natives`), `clipboard` (text, documents, set_text) and
   `keyboard` (the native methods of the keyboard's view, and a plugin
   that shows or hides the on-screen keyboard after each frame that asks
-  for an input method or no longer does, `showTextInput`).
+  for an input method or no longer does, `showTextInput`) and `ending`
+  (the wait of the activity's end, see "Relaunches").
   Every JNI failure is logged and comes back as `None`, never a panic.
 - `packaging/android/java/dev/tracedraw/app/TraceDrawActivity.java`: the
   activity, with the picker intents, `onActivityResult`, the content
