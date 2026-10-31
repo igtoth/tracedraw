@@ -1387,15 +1387,17 @@ fn cmyk_profile_member(name: &str) -> String {
 /// colour its objects use.
 const COLOR_XML: &str = "<Color><ColorContext><ColorModel>Cmyk</ColorModel><RenderingIntent>RelativeColorimetric</RenderingIntent></ColorContext><HasRgbObjects>true</HasRgbObjects><HasCmykObjects>true</HasCmykObjects><HasGrayscaleObjects>false</HasGrayscaleObjects></Color>\r\n";
 
+/// The drawing's font ids by family and the (font id, style flags) of
+/// its text runs, for the package's font members.
+type FontUses<'a> = (&'a [(u16, String)], &'a [(u16, u32)]);
+
 fn zip_v16(
     v: Ver,
     doc: &Document,
     root: &[u8],
     files: &DataFiles,
     previews: &Previews,
-    // The drawing's font ids by family and the (font id, style flags)
-    // of its text runs.
-    (font_ids, font_uses): (&[(u16, String)], &[(u16, u32)]),
+    (font_ids, font_uses): FontUses,
     own: &[(&str, Vec<u8>)],
 ) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
