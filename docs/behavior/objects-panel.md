@@ -12,6 +12,7 @@ and Delete at the right.
 | Layer (light grey), one step in | collapse arrow, eye (show or hide), printer (print and export or not), padlock (lock or unlock), layer icon (its top sheet blue for a page's layers, amber for master layers), name |
 | Active layer | as a layer, on `#D4E6F7` with a 3 px accent bar at the left, name in bold |
 | Master layer for odd or even pages | as a layer, followed by "Odd pages" or "Even pages" in small grey; dimmed on the pages it does not show on |
+| Master layer in front of the page's layers | as a layer, followed by "In front" in small grey (after "Odd pages" or "Even pages" if it has one); it stays listed under the Master Page (#1132) |
 | Guides | eye (show or hide the guidelines), a pale printer (guidelines never print), padlock (locks or unlocks all of the page's guidelines; shut when they all are) |
 | Document Grid | eye (show or hide the grid), a pale printer and a pale shut padlock (the grid never prints and cannot be edited) |
 | Object, two steps in | thumbnail: the object itself drawn small (its shape, fill, outline and effects) on a white tile, then its name, or what it is when it has none ("Rectangle", "Curve with 8 nodes", "Paragraph Text: ...") |
@@ -34,7 +35,10 @@ and Delete at the right.
   page's topmost visible, unlocked layer, as they do before any layer is
   picked. Each open drawing remembers its own pick.
 - Objects on master layers show on every page the layer is for (all,
-  odd or even pages) under the page's own layers, and can be clicked,
+  odd or even pages) under the page's own layers, or over them when the
+  layer is in front (its menu's "In front of the page's layers", or To
+  Front of Page on one of its objects; To Back of Page puts it behind
+  again, one undo step; #1132), and can be clicked,
   marquee-selected, snapped to and selected with Select All or Tab from
   any of those pages while the layer is visible and unlocked.
 - Double-click a layer to rename it; double-click an object to name it
@@ -43,7 +47,7 @@ and Delete at the right.
   rename the page (the Rename Page dialog, as in Layout > Rename Page).
 - A layer's context menu: Rename, Move Up, Move Down, Delete Layer (a
   page keeps its last layer); a master layer's adds Show On (All pages,
-  Odd pages, Even pages).
+  Odd pages, Even pages) and In front of the page's layers (a tick).
 - The bottom bar:
   - New Layer adds "Layer n" on top of the page's layers (n is the
     number of layers plus one, or the next number not in use) and makes

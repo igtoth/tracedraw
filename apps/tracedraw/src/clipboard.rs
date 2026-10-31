@@ -146,6 +146,13 @@ fn read_system_text_and_files() -> ClipboardContent {
     }
 }
 
+/// The system clipboard's text, read where the system lets an
+/// application read it (not in a browser, which hands it only to paste
+/// events).
+pub fn system_text() -> Option<String> {
+    read_system_text_and_files().text
+}
+
 #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
 fn read_system_image() -> Option<image::RgbaImage> {
     read_image()
@@ -258,6 +265,11 @@ impl App {
 
     /// Copy to the internal clipboard and, as SVG, to the system clipboard.
     pub fn copy_with_system(&mut self) {
+        // While a text is being edited: its selected characters (#1377).
+        if self.editing_text() {
+            self.text_copy();
+            return;
+        }
         // Guidelines selected and no objects: they are copied (#376).
         if self.selection.is_empty() && self.copy_selected_guides() {
             return;
@@ -303,16 +315,38 @@ impl App {
         }
     }
 
-    /// Paste the system clipboard's text as artistic text at the page centre.
+    /// Paste the system clipboard's text as artistic text at the page
+    /// centre. Characters copied while editing a text, while the
+    /// clipboard still holds them, keep their formatting and their
+    /// text's fill and outline (#1378).
     pub fn paste_as_text(&mut self, text: &str) {
         let c = self.page_rect().center();
-        let span = TextSpan {
-            bold: self.text_bold,
-            italic: self.text_italic,
-            ..TextSpan::new(text, self.text_font.clone(), self.text_size_pt)
+        let clip = self
+            .text_clip
+            .as_ref()
+            .filter(|clip| clip.plain == crate::text_editing::unify_line_ends(text))
+            .cloned();
+        let (spans, fill, stroke) = match clip {
+            Some(clip) => (
+                clip.spans
+                    .into_iter()
+                    .filter(|sp| !sp.text.is_empty())
+                    .collect(),
+                clip.fill,
+                clip.stroke,
+            ),
+            None => (
+                vec![TextSpan {
+                    bold: self.text_bold,
+                    italic: self.text_italic,
+                    ..TextSpan::new(text, self.text_font.clone(), self.text_size_pt)
+                }],
+                tracedraw_core::Fill::Solid(tracedraw_core::Color::BLACK),
+                None,
+            ),
         };
         let kind = ShapeKind::Text {
-            spans: vec![span],
+            spans,
             origin: Point::new(c.x, c.y),
             frame: None,
             align: tracedraw_core::TextAlign::Left,
@@ -322,11 +356,11 @@ impl App {
         if let Some(id) = self.new_shape(kind) {
             self.run(Command::SetFill {
                 shapes: vec![id],
-                fill: tracedraw_core::Fill::Solid(tracedraw_core::Color::BLACK),
+                fill,
             });
             self.run(Command::SetStroke {
                 shapes: vec![id],
-                stroke: None,
+                stroke,
             });
             self.select(vec![id]);
         }
@@ -372,6 +406,12 @@ impl App {
     /// Ctrl+V, with the text of the paste event when there was one (a
     /// browser offers the clipboard's text only that way).
     pub fn paste_with_event_text(&mut self, text: Option<String>) {
+        // While a text is being edited: into the text at the caret
+        // (#1377).
+        if self.editing_text() {
+            self.text_paste(text);
+            return;
+        }
         if crate::files::WEB {
             let content = ClipboardContent {
                 text: text.filter(|t| !t.is_empty()),
@@ -447,6 +487,14 @@ impl App {
     fn paste_from_unmarked(&mut self, content: ClipboardContent) {
         if content.is_empty() && self.clipboard.is_some() {
             self.paste();
+            return;
+        }
+        // Characters copied while editing a text, where the clipboard
+        // cannot be read (a browser's menu Paste): a text of them.
+        if content.is_empty() {
+            if let Some(plain) = self.text_clip.as_ref().map(|c| c.plain.clone()) {
+                self.paste_as_text(&plain);
+            }
             return;
         }
         if !content.files.is_empty() {

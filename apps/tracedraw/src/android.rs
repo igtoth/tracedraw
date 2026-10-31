@@ -5,7 +5,9 @@
 //! with touch and stylus input through winit. Files go through the
 //! system's document picker (Storage Access Framework) and the clipboard
 //! through the system's clipboard service, both reached over JNI with the
-//! activity's Java methods ([`documents`], [`clipboard`]); printing and
+//! activity's Java methods ([`documents`], [`clipboard`]), and text from
+//! the on-screen keyboard's input methods through an invisible view of
+//! the activity ([`keyboard`]); printing and
 //! external programs are not available (docs/behavior/android.md).
 
 use android_activity::AndroidApp;
@@ -67,6 +69,7 @@ fn android_main(app: AndroidApp) {
     prepare_folders(&app);
     ACTIVITY.store(app.activity_as_ptr() as usize, Ordering::Release);
     documents::register_natives();
+    keyboard::register_natives();
     tracedraw_text::install();
     tracedraw_io::emf::install();
     // A fresh install starts in the Touch workspace (larger bars and
@@ -94,6 +97,8 @@ fn android_main(app: AndroidApp) {
         options,
         Box::new(|cc| {
             let _ = EGUI.set(cc.egui_ctx.clone());
+            // The on-screen keyboard follows what each frame asks for.
+            cc.egui_ctx.add_plugin(keyboard::Follow);
             Ok(Box::new(crate::Shell::new(cc, None)))
         }),
     );
@@ -414,5 +419,142 @@ pub mod clipboard {
             .z()
         })
         .unwrap_or(false)
+    }
+}
+
+/// The on-screen keyboard (#1309): shown while a frame takes typed text,
+/// and what its input methods compose, commit and delete, which the
+/// activity's invisible text view (`TextInputView.java`) hands over
+/// through the native methods below (see `soft_keyboard.rs`).
+pub mod keyboard {
+    use super::*;
+    use crate::soft_keyboard::{push, Typed};
+    use jni::objects::{JObject, JString};
+    use jni::sys::jint;
+    use jni::{jni_sig, jni_str, EnvUnowned, JValue};
+    use std::sync::atomic::AtomicBool;
+
+    /// Whether the keyboard was last asked to show.
+    static SHOWN: AtomicBool = AtomicBool::new(false);
+
+    /// Shows and hides the keyboard after each frame.
+    pub struct Follow;
+
+    impl egui::plugin::Plugin for Follow {
+        fn debug_name(&self) -> &'static str {
+            "soft keyboard"
+        }
+
+        fn output_hook(&mut self, _ctx: &egui::Context, output: &mut egui::FullOutput) {
+            follow(crate::soft_keyboard::wanted(output));
+        }
+    }
+
+    /// Show the keyboard when a frame takes typed text (`want`) and it is
+    /// not shown, hide it when the frame no longer does.
+    fn follow(want: bool) {
+        if SHOWN.swap(want, Ordering::AcqRel) == want {
+            return;
+        }
+        let done = with_activity("show the keyboard", |env, activity| {
+            env.call_method(
+                activity,
+                jni_str!("showTextInput"),
+                jni_sig!("(Z)V"),
+                &[JValue::Bool(want as jni::sys::jboolean)],
+            )?
+            .v()
+        });
+        if done.is_none() {
+            // Asked again after the next frame.
+            SHOWN.store(!want, Ordering::Release);
+        }
+    }
+
+    /// Queue what the keyboard did and wake the frame loop.
+    fn typed(t: Typed) {
+        push(t);
+        request_repaint();
+    }
+
+    /// `TraceDrawActivity.nativeImeCompose`: the text being composed.
+    extern "system" fn native_ime_compose<'local>(
+        mut env: EnvUnowned<'local>,
+        _this: JObject<'local>,
+        text: JString<'local>,
+    ) {
+        env.with_env(|env| -> jni::errors::Result<()> {
+            typed(Typed::Compose(string_of(env, &text).unwrap_or_default()));
+            Ok(())
+        })
+        .resolve::<jni::errors::LogErrorAndDefault>();
+    }
+
+    /// `TraceDrawActivity.nativeImeCommit`: text committed.
+    extern "system" fn native_ime_commit<'local>(
+        mut env: EnvUnowned<'local>,
+        _this: JObject<'local>,
+        text: JString<'local>,
+    ) {
+        env.with_env(|env| -> jni::errors::Result<()> {
+            typed(Typed::Commit(string_of(env, &text).unwrap_or_default()));
+            Ok(())
+        })
+        .resolve::<jni::errors::LogErrorAndDefault>();
+    }
+
+    /// `TraceDrawActivity.nativeImeDelete`: characters deleted before and
+    /// after the caret.
+    extern "system" fn native_ime_delete<'local>(
+        _env: EnvUnowned<'local>,
+        _this: JObject<'local>,
+        before: jint,
+        after: jint,
+    ) {
+        typed(Typed::Delete {
+            before: before.clamp(0, 1000) as usize,
+            after: after.clamp(0, 1000) as usize,
+        });
+    }
+
+    /// Bind the keyboard's native methods (on their own, so that the
+    /// document picker's work whatever happens here).
+    pub fn register_natives() {
+        let done = with_activity("register keyboard natives", |env, activity| {
+            let class = env.get_object_class(activity)?;
+            let methods = [
+                // SAFETY: each function has the instance-method shape of
+                // its signature: an unowned env, `this`, then a string or
+                // two ints, returning nothing.
+                unsafe {
+                    jni::NativeMethod::from_raw_parts(
+                        jni_str!("nativeImeCompose"),
+                        jni_str!("(Ljava/lang/String;)V"),
+                        native_ime_compose as *mut std::ffi::c_void,
+                    )
+                },
+                unsafe {
+                    jni::NativeMethod::from_raw_parts(
+                        jni_str!("nativeImeCommit"),
+                        jni_str!("(Ljava/lang/String;)V"),
+                        native_ime_commit as *mut std::ffi::c_void,
+                    )
+                },
+                unsafe {
+                    jni::NativeMethod::from_raw_parts(
+                        jni_str!("nativeImeDelete"),
+                        jni_str!("(II)V"),
+                        native_ime_delete as *mut std::ffi::c_void,
+                    )
+                },
+            ];
+            // SAFETY: as above; the class is the activity's own.
+            unsafe { env.register_native_methods(&class, &methods) }
+        });
+        if done.is_none() {
+            log::error!(
+                "the on-screen keyboard types Latin keys only: native methods not registered"
+            );
+        }
     }
 }

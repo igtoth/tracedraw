@@ -1275,6 +1275,9 @@ impl Command {
                                 &group_effects,
                             );
                             c.absorb(g.transform);
+                            // The group's uniform transparency stays on
+                            // each of its objects.
+                            c.absorb_opacity(g.opacity);
                             layer.shapes.insert(idx + k, c);
                         }
                     }
@@ -2278,6 +2281,39 @@ mod tests {
         assert_eq!(shapes.len(), 2);
         let bb = shapes[1].bounds();
         assert!((bb.x0 - 25.0).abs() < 1e-9 && (bb.y0 - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn ungrouping_keeps_the_groups_uniform_transparency_on_each_object() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let mut a = rect(&mut doc, 0.0);
+        a.opacity = 0.5;
+        let b = rect(&mut doc, 20.0);
+        let (ia, ib) = (a.id, b.id);
+        Command::AddShape { layer, shape: a }
+            .apply(&mut doc)
+            .unwrap();
+        Command::AddShape { layer, shape: b }
+            .apply(&mut doc)
+            .unwrap();
+        Command::Group {
+            shapes: vec![ia, ib],
+        }
+        .apply(&mut doc)
+        .unwrap();
+        let gid = doc.layer(layer).unwrap().shapes[0].id;
+        Command::SetOpacity {
+            shapes: vec![gid],
+            opacity: 0.4,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        Command::Ungroup { group: gid }.apply(&mut doc).unwrap();
+        let shapes = &doc.layer(layer).unwrap().shapes;
+        assert_eq!(shapes.len(), 2);
+        assert!((shapes[0].opacity - 0.2).abs() < 1e-9);
+        assert!((shapes[1].opacity - 0.4).abs() < 1e-9);
     }
 
     #[test]

@@ -422,18 +422,21 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
 
     // The default palette at the window's edge lies outermost (a row
     // inside the toolbars, a column outside the toolbox and the dockers);
-    // beside the drawing it comes after the dockers, between them and the
-    // drawing (at the bottom by default). The document palette is a row
-    // under the drawing window (over it when the palette is docked at
-    // the top).
+    // between a side's two docker columns it comes after the column at
+    // the edge; beside the drawing it comes after the dockers, between
+    // them and the drawing (at the bottom by default). The document
+    // palette is a row under the drawing window (over it when the
+    // palette is docked at the top).
     let palette_frame = Frame::new().fill(Tokens::panel());
-    let (palette_dock, palette_beside) = bars_layout.palette_place();
+    let (palette_dock, palette_spot) = bars_layout.palette_place();
+    let palette_beside = palette_spot == bars::PaletteSpot::Beside;
+    let palette_edge = palette_spot == bars::PaletteSpot::Edge;
     let show_palette = app.settings.palette.show_palette;
     let show_doc_palette = show_palette && app.settings.palette.show_document;
     if show_palette && !palette_beside && palette_dock.horizontal() {
         palette_rows(app, ui, palette_dock == Dock::Top, palette_frame);
     }
-    if !palette_beside && matches!(palette_dock, Dock::Left | Dock::Right) {
+    if palette_edge && matches!(palette_dock, Dock::Left | Dock::Right) {
         let panel = |id: &'static str| {
             if palette_dock == Dock::Left {
                 Panel::left(id)
@@ -491,45 +494,29 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
     // The docker columns: the default one at the right (right-to-left
     // languages mirror the workspace: it sits on the left), the other at
     // the other side, each a tab strip and, when open, the docker in
-    // front. The other column exists only while it holds a docker.
+    // front. The other column exists only while it holds a docker. Each
+    // side can hold a second column, between its column at the edge and
+    // the drawing, and the palette can lie between the two. Where the
+    // columns are is kept for the frame (`dockers::DOCKER_COLUMNS`), for
+    // the drop bands of a dragged docker or palette.
     app.reconcile_dockers();
-    let rtl = crate::i18n::is_rtl();
     use crate::app::DockerPlace;
+    let mut columns: Vec<(DockerPlace, egui::Rect)> = Vec::new();
     for place in [DockerPlace::Right, DockerPlace::Left] {
-        if place == DockerPlace::Left && app.left_dockers.is_empty() {
-            continue;
+        let at_left = dockers::strip_at_left(place);
+        if place == DockerPlace::Right || !app.left_dockers.is_empty() {
+            columns.push((place, docker_column(app, ui, place, at_left)));
         }
-        let at_left = (place == DockerPlace::Left) != rtl;
-        let id = if place == DockerPlace::Left {
-            ("docker_tabs_left", "dockers_left")
-        } else {
-            ("docker_tabs", "dockers")
-        };
-        let docker_tabs = if at_left {
-            Panel::left(id.0)
-        } else {
-            Panel::right(id.0)
-        };
-        docker_tabs
-            .exact_size(dockers::STRIP_W)
-            .resizable(false)
-            .show_separator_line(false)
-            .frame(Frame::new().fill(crate::theme::Tokens::tab_strip()))
-            .show(ui, |ui| dockers::tab_strip(app, ui, place));
-        let (_, _, shown) = app.docker_column(place);
-        if shown {
-            let dockers_panel = if at_left {
-                Panel::left(id.1)
-            } else {
-                Panel::right(id.1)
-            };
-            dockers_panel
-                .default_size(340.0)
-                .resizable(true)
-                .frame(Frame::new().fill(crate::theme::Tokens::field()))
-                .show(ui, |ui| dockers::dockers(app, ui, place));
+        let side = if at_left { Dock::Left } else { Dock::Right };
+        if show_palette && palette_spot == bars::PaletteSpot::Between && palette_dock == side {
+            palette_columns(app, ui, at_left, palette_frame);
+        }
+        let inner = place.inner();
+        if !app.docker_column(inner).0.is_empty() {
+            columns.push((inner, docker_column(app, ui, inner, at_left)));
         }
     }
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(dockers::DOCKER_COLUMNS), columns));
 
     if show_palette && palette_beside && matches!(palette_dock, Dock::Left | Dock::Right) {
         palette_columns(app, ui, palette_dock == Dock::Left, palette_frame);
@@ -650,6 +637,51 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
     if app.engine.revision() != before {
         ctx.request_repaint();
     }
+}
+
+/// The docker column at `place` (its side's edge at the left when
+/// `at_left`): the tab strip and, while open, the docker in front, a
+/// panel the user can widen or narrow. Returns where it lies.
+fn docker_column(
+    app: &mut App,
+    ui: &mut Ui,
+    place: crate::app::DockerPlace,
+    at_left: bool,
+) -> egui::Rect {
+    use crate::app::DockerPlace;
+    let id = match place {
+        DockerPlace::Left => ("docker_tabs_left", "dockers_left"),
+        DockerPlace::RightInner => ("docker_tabs_inner", "dockers_inner"),
+        DockerPlace::LeftInner => ("docker_tabs_left_inner", "dockers_left_inner"),
+        _ => ("docker_tabs", "dockers"),
+    };
+    let panel = |id: &'static str| {
+        if at_left {
+            Panel::left(id)
+        } else {
+            Panel::right(id)
+        }
+    };
+    let mut rect = panel(id.0)
+        .exact_size(dockers::STRIP_W)
+        .resizable(false)
+        .show_separator_line(false)
+        .frame(Frame::new().fill(crate::theme::Tokens::tab_strip()))
+        .show(ui, |ui| dockers::tab_strip(app, ui, place))
+        .response
+        .rect;
+    let (_, _, shown) = app.docker_column(place);
+    if shown {
+        let r = panel(id.1)
+            .default_size(340.0)
+            .resizable(true)
+            .frame(Frame::new().fill(crate::theme::Tokens::field()))
+            .show(ui, |ui| dockers::dockers(app, ui, place))
+            .response
+            .rect;
+        rect = rect.union(r);
+    }
+    rect
 }
 
 /// The default palette and each further palette shown as rows, at the top

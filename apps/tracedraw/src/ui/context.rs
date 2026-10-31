@@ -1,5 +1,5 @@
 //! Right-click context menus: object menu (Pick tool), node menu (Shape
-//! tool), page menu (empty area), text menu.
+//! tool), page menu (empty area), text editing menu.
 
 use crate::app::{App, DockerTab};
 use crate::i18n::tr;
@@ -61,6 +61,8 @@ pub fn context_menu(app: &mut App, ui: &mut Ui, response: &Response) {
                 && app.guide_at(p).is_some();
             if let Some(locked) = app.context_locked {
                 locked_menu(app, ui, locked, &mut close);
+            } else if app.editing_text() {
+                text_edit_menu(app, ui, &mut close);
             } else if app.tool == Tool::Shape {
                 node_menu(app, ui, &mut close);
             } else if on_guide {
@@ -118,6 +120,43 @@ fn guide_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
         if let Some(i) = selected.first().copied() {
             app.open_guide_properties(i);
         }
+    }
+}
+
+/// Right-click while a text is being edited: the editing commands act on
+/// its characters (#1377), and the Properties docker.
+fn text_edit_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
+    let picked = app.text_selection_active();
+    if ci(
+        ui,
+        close,
+        "menu.edit.undo",
+        "Ctrl+Z",
+        app.engine.undo_label().is_some(),
+    ) {
+        app.undo();
+    }
+    sep(ui);
+    if ci(ui, close, "menu.edit.cut", "Ctrl+X", picked) {
+        app.text_cut();
+    }
+    if ci(ui, close, "menu.edit.copy", "Ctrl+C", picked) {
+        app.text_copy();
+    }
+    if ci(ui, close, "menu.edit.paste", "Ctrl+V", true) {
+        app.text_paste(None);
+    }
+    if ci(ui, close, "menu.edit.delete", "Delete", picked) {
+        app.text_delete_forward();
+    }
+    sep(ui);
+    if ci(ui, close, "menu.edit.select_all", "Ctrl+A", true) {
+        app.text_select_all();
+    }
+    sep(ui);
+    if ci(ui, close, "menu.object.properties", "Alt+Enter", true) {
+        app.show_dockers = true;
+        app.docker_tab = DockerTab::Properties;
     }
 }
 
@@ -550,7 +589,7 @@ fn page_menu(app: &mut App, ui: &mut Ui, p: tracedraw_core::Point, close: &mut b
         close,
         "menu.edit.paste",
         "Ctrl+V",
-        app.clipboard.is_some(),
+        app.clipboard.is_some() || app.text_clip.is_some(),
     ) {
         app.paste_any();
         if let Some(b) = app.selection_bounds() {

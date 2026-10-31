@@ -31,6 +31,7 @@ caracteres que você não mudou mantêm a formatação.
 | Teclas | O que fazem |
 |---|---|
 | Digitar, <kbd>Ctrl+V</kbd> | inserem no cursor, substituindo a seleção |
+| <kbd>Ctrl+C</kbd>, <kbd>Ctrl+X</kbd>, <kbd>Ctrl+V</kbd> | copiam, recortam e colam os caracteres selecionados; o menu [[menu.edit]], a barra de ferramentas e o menu do botão direito fazem o mesmo durante a edição. Colados aqui, mantêm fonte, tamanho e cores; outros programas recebem o texto simples |
 | <kbd>Backspace</kbd>, <kbd>Delete</kbd> | excluem a seleção, senão o caractere antes ou depois |
 | <kbd>Enter</kbd>, <kbd>Shift+Enter</kbd> | novo parágrafo, nova linha |
 | Setas, com <kbd>Ctrl</kbd> | movem um caractere ou uma palavra; <kbd>Shift</kbd> seleciona |
@@ -54,6 +55,10 @@ no Windows) digitam no texto e nos campos, e códigos <kbd>Alt</kbd> digitados
 no teclado numérico dão o caractere uma vez só.
 Letras digitadas com <kbd>AltGr</kbd> (polonês ą ę ł, alemão @ € { }) entram
 no texto e nos campos, inclusive no Windows.
+No Android o teclado da tela digita todas as escritas que seus métodos de
+entrada compõem (chinês, japonês, coreano, tâmil). Fontes antigas que põem as
+letras de uma escrita nos lugares das latinas (algumas fontes tâmeis) digitam
+como seus teclados esperam: a Autocorreção não muda as letras digitadas nelas.
 
 Tudo o que você digita em uma sessão de edição é um passo de desfazer.
 

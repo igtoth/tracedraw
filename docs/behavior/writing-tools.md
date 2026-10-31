@@ -145,6 +145,17 @@ is finished with a space or punctuation:
 Settings written by older versions with autocorrect switched off as a
 whole load with every rule off.
 
+Autocorrect leaves alone the letters typed in a font that sets another
+script at the places of Latin letters, as fonts made before Unicode had
+the script do (older Tamil fonts typed with the Latin keys of their
+letters, symbol fonts): a capital or a curly quote would be another
+letter there. Such a font has a symbol character map, or says it draws
+a script (Indian scripts, Sinhala, Thai and the others of South-East
+Asia, Tibetan, Arabic, Hebrew, Armenian, Georgian, Ethiopic, Greek,
+Cyrillic) and maps none of its characters (#1358,
+`text_editing::tests::autocorrect_leaves_fonts_with_a_script_at_latin_places_alone`,
+`tracedraw_text::tests::fonts_with_a_script_at_latin_places_are_told_apart`).
+
 Autocorrect never changes text that was pasted or imported, only typed
 characters.
 

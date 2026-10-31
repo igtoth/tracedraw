@@ -415,7 +415,10 @@ pub(crate) fn ime_at_caret(app: &App, painter: &Painter, top: Pos2, bottom: Pos2
     ctx.output_mut(|o| {
         o.ime = Some(egui::output::IMEOutput {
             purpose: egui::IMEPurpose::Normal,
-            rect: painter.clip_rect(),
+            // The windowing layer places the input method's candidate
+            // window beside this area: the caret, not the whole canvas
+            // (whose corner put it far from the letters typed).
+            rect: caret,
             cursor_rect: caret,
             should_interrupt_composition: false,
         })

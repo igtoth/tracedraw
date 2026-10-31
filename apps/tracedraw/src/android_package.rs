@@ -12,6 +12,8 @@ mod tests {
     const CARGO: &str = include_str!("../Cargo.toml");
     const CI: &str = include_str!("../../../.github/workflows/build.yml");
     const BRIDGE: &str = include_str!("android.rs");
+    const TEXT_VIEW: &str =
+        include_str!("../../../packaging/android/java/dev/tracedraw/app/TextInputView.java");
     const PLAY: &str = include_str!("../../../docs/android-play.md");
 
     /// The manifest names the activity the Java code defines, the
@@ -280,5 +282,51 @@ mod tests {
         }
         let short = std::fs::read_to_string(meta.join("short_description.txt")).unwrap_or_default();
         assert!(!short.is_empty() && short.chars().count() <= 80);
+    }
+
+    /// The on-screen keyboard (#1309): the bridge shows it with the
+    /// activity's method, registers the native methods the activity
+    /// declares with their signatures, and the view the keyboard types
+    /// into hands over what it composes, commits and deletes.
+    #[test]
+    fn the_keyboard_view_and_the_bridge_agree() {
+        assert!(ACTIVITY.contains("public void showTextInput(final boolean on)"));
+        assert!(BRIDGE.contains("jni_str!(\"showTextInput\")"));
+        assert!(BRIDGE.contains("jni_sig!(\"(Z)V\")"));
+        for (java, name, sig) in [
+            (
+                "private native void nativeImeCompose(String text);",
+                "nativeImeCompose",
+                "(Ljava/lang/String;)V",
+            ),
+            (
+                "private native void nativeImeCommit(String text);",
+                "nativeImeCommit",
+                "(Ljava/lang/String;)V",
+            ),
+            (
+                "private native void nativeImeDelete(int before, int after);",
+                "nativeImeDelete",
+                "(II)V",
+            ),
+        ] {
+            assert!(ACTIVITY.contains(java), "the activity lacks {java:?}");
+            assert!(BRIDGE.contains(&format!("jni_str!(\"{name}\")")));
+            assert!(BRIDGE.contains(&format!("jni_str!(\"{sig}\")")));
+        }
+        assert!(BRIDGE.contains("keyboard::register_natives();"));
+        assert!(ACTIVITY.contains("addContentView(textInput"));
+        assert!(TEXT_VIEW.contains("final class TextInputView extends View"));
+        assert!(
+            TEXT_VIEW.contains("public InputConnection onCreateInputConnection(EditorInfo out)")
+        );
+        for call in [
+            "activity.imeCompose(",
+            "activity.imeCommit(",
+            "activity.imeDelete(",
+        ] {
+            assert!(TEXT_VIEW.contains(call), "the view never calls {call}");
+        }
+        assert!(BUILD.contains("find packaging/android/java -name '*.java'"));
     }
 }

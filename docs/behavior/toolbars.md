@@ -60,9 +60,18 @@ a click lower on the tab brings the panel to the front
   column at the right of the window (`open_dockers`, `docker_tab` in
   front, `show_dockers`; at the left in a right-to-left language), the
   column at the other side (`left_dockers`, `left_tab`,
-  `show_left_dockers`; it exists only while it holds a panel) and
-  floating windows (`floating_dockers`, one panel each). Every panel
-  starts in the default column.
+  `show_left_dockers`; it exists only while it holds a panel), a
+  second column on either side (`inner_dockers`, `left_inner_dockers`:
+  `DockerPlace::RightInner` and `DockerPlace::LeftInner`, each with its
+  own tab strip, panel in front, collapse and width, between the side's
+  column at the window's edge and the drawing) and floating windows
+  (`floating_dockers`, one panel each). Every panel starts in the default
+  column. A second column never stands alone: when the column at its
+  side's edge loses its last panel, the second column's panels become
+  that column's (`App::settle_columns`). So a side holds at most two
+  columns, and the colour palette can lie between them (see Colour
+  palette below), as in drawing | Properties | palette | Color Styles |
+  window edge.
 - Dragging a tab, or the title bar of a panel (a column's or a floating
   one's), moves the panel: a light blue band shows where it goes, within
   56 px of a side the column there (the strip and a 340 px panel),
@@ -70,9 +79,18 @@ a click lower on the tab brings the panel to the front
   top left corner where the grab point puts it. Releasing puts the panel
   there, in front of the column it joins (the column it leaves shows the
   tab next to it, or closes when none is left); a release outside the
-  window counts at the last place the pointer was seen. The tab's menu
-  and the title's menu (right click) have Dock at Right, Dock at Left,
-  Floating and Close panel.
+  window counts at the last place the pointer was seen. Over a docked
+  column (its strip or its panel) the band is that column and the panel
+  joins it. Within 56 px of the drawing's side of a side's only column
+  (outside it, over the drawing) the band is a column's width there and
+  the panel makes the side's second column, beside it; a panel alone in
+  its column has nothing to stand beside and stays. The column rects are
+  recorded each frame by the window layout (`dockers::DOCKER_COLUMNS`,
+  like `bars::DRAWING_ROOM`), so the targets cost nothing while
+  dragging. The tab's menu and the title's menu (right click) have Dock
+  at Right, Dock at Right, Second Column, Dock at Left, Dock at Left,
+  Second Column, Floating and Close panel (a Second Column entry is grey
+  while the column at that side's edge holds no other panel).
 - A floating panel is a window with a grey border and a shadow: the
   panel's title bar (its name and close; no collapse) over its page,
   resizable at its edges; where it is and how large are kept.
@@ -84,10 +102,14 @@ a click lower on the tab brings the panel to the front
   front of an open column or floating (`App::docker_shown`); the plus
   button of a column opens a ticked panel in front of that column.
 - The places are kept in the preferences (`dockers`: `open`, `front`,
-  `left`, `left_front`, `left_shown`, `floating` with each window's
-  corner and size); older preferences with the column alone read as
-  before.
+  `left`, `left_front`, `left_shown`, `inner`, `inner_front`,
+  `inner_shown`, `left_inner`, `left_inner_front`, `left_inner_shown`
+  (the second columns, written only while they hold a panel),
+  `floating` with each window's corner and size); older preferences
+  with the column alone read as before.
 - Checks: `app::tests::dockers_move_between_the_columns_and_float`,
+  `app::tests::a_side_holds_a_second_docker_column`,
+  `ui::dockers::tests::a_docker_dropped_beside_a_column_makes_a_second_column`,
   `ui::dockers::tests::a_docker_dragged_to_a_side_docks_there_and_the_window_draws_them_all`.
 
 ## Standard toolbar
@@ -223,7 +245,7 @@ bar move (`ui/bars.rs`).
 | Bar | Places | First place |
 |---|---|---|
 | Toolbox | top, bottom, left, right, floating | left |
-| Colour palette | top, bottom, left, right (each beside the drawing or at the window's edge), floating | bottom, beside the drawing (on a side at first: the outermost column, beyond the dockers) |
+| Colour palette | top, bottom, left, right (each beside the drawing or at the window's edge; left and right also between two docker columns), floating | bottom, beside the drawing (on a side at first: the outermost column, beyond the dockers) |
 | Standard toolbar | top, bottom, floating | top, first row |
 | Property bar | top, bottom, floating | top, second row |
 | Text, Zoom, Transform toolbars, time tracker | top, bottom, floating | top, a row each under the property bar (hidden at first) |
@@ -293,6 +315,26 @@ bar move (`ui/bars.rs`).
   with it
   (`ui::bars::tests::the_palette_docks_beside_the_drawing_or_at_the_window_edge`,
   `ui::bars::tests::the_palette_dropped_beside_the_drawing_lies_between_it_and_the_dockers`).
+- At the left and the right the palette also docks between the side's
+  two docker columns (`PaletteSpot::Between`): a column of swatches
+  between the column at the window's edge and the second column, each
+  keeping its own tab strip (drawing | Properties | palette | Color
+  Styles | window edge). While it is dragged, the line where the two
+  columns meet (or the palette between them) is a target as the
+  drawing's edges are: within 56 px of it, the nearest target wins, and
+  the band is the palette's width across that line (the gap itself while
+  the palette lies there). The columns keep the widths they were given
+  and can still be widened or narrowed by their inner edges; the drawing
+  takes what is left. Its menu has "Dock at Left, Between the Panels"
+  and "Dock at Right, Between the Panels" after the edge place of that
+  side, grey while the side has one docker column. The place is kept in
+  the preferences (`bars.palette_between`, written only while on;
+  preferences without it read as before) and comes back at the next
+  start. While the side has one column the palette lies after it,
+  beside the drawing, and goes back between the columns once there are
+  two again. Further palettes shown go with it
+  (`ui::bars::tests::the_palette_docks_between_two_docker_columns`,
+  `ui::bars::tests::the_palette_dropped_between_two_docker_columns_lies_between_them`).
 - The palette on a side is a column: the swatches run downwards and the
   arrows sit at its ends; the expanded palette opens beside the column
   (below a palette along the top). Wherever the palette is, the document
