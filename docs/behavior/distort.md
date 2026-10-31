@@ -56,8 +56,9 @@ curve stays open.
 
 ## The tool
 
-- Drag on an object: the distortion is centred where the drag started
-  and follows the pointer, one undo step for the whole drag. Push and
+- Drag on an object, or anywhere with one object selected (off it too):
+  the distortion is centred where the drag started and follows the
+  pointer, one undo step for the whole drag (#1442). Push and
   Pull: `amount = 100 * dx / r` (`dx` the drag to the right, `r` half
   the object's larger side; to the left pulls), rounded to whole
   percents. Zipper: `amplitude = |drag| / 4`, the bar's frequency and
@@ -81,8 +82,12 @@ curve stays open.
   `frequency / 100` of the way from the centre to the Zipper's end and
   dragging it along the line sets the frequency. A handle drag edits the
   object's distortion in place (its centre kept) as one undo step.
-- A drag replaces the object's distortion (an object has at most one;
-  it stays in its place among the object's other effects).
+- A drag that does not start on a handle adds a new distortion over the
+  ones the object has: each is applied to the outline the ones before it
+  made, so distortions build up drag after drag (#1442). The handles and
+  the bar show and edit the newest; Clear Distortion takes the newest
+  off, so a second Clear takes the one before it; Convert to Curves
+  makes all of them, oldest first, the object's outline.
 - A click selects the object under the pointer (or nothing).
 - Groups and bitmaps are not distorted.
 
@@ -125,6 +130,7 @@ curve stays open.
 - `distort::tests::a_twisted_line_is_a_smooth_spiral_to_its_ends`
 - `distort::tests::older_files_and_odd_values_read`
 - `distort_tool::tests::a_drag_distorts_about_where_it_started`
+- `distort_tool::tests::drags_start_anywhere_and_add_distortions`
 - `distort_tool::tests::the_bar_edits_the_selected_distortion`
 - `distort_tool::tests::settings_round_trip_and_stay_in_range`
 - `distort_tool::tests::a_bar_edit_previews_on_an_undistorted_selection`
