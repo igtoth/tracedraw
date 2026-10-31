@@ -40,7 +40,7 @@
 - [[dialog.smoothing]]（0 到 100，預設為 25）：曲線更平滑、節點更少。
 - [[dialog.corner_smoothness]]（0 到 100）：轉角更圓。
 - [[dialog.trace_remove]]：從描繪結果中省略什麼。**背景色彩**移除到達圖片邊緣的背景，**影像中的整個色彩**移除該色彩的每個區域，**無**描繪所有內容。[[dialog.trace_remove_auto]] 沿圖片邊緣尋找背景色彩；[[dialog.trace_remove_specify]] 使用色票的色彩，您可以變更它，或用旁邊的滴管從預覽中取色。
-- [[dialog.trace_objects]]：[[dialog.trace_merge_adjacent]]（預設開啟）把一種色彩的所有區域合成一條曲線；關閉時，每個獨立的色塊是一條單獨的曲線。[[dialog.trace_remove_overlap]] 讓每個形狀只佔自己的像素；關閉時，形狀會稍微伸到上方形狀的下面，相鄰形狀之間就不會出現縫隙。[[dialog.trace_group_by_color]] 把每種色彩的曲線放進各自的群組；當一種色彩的區域尚未合併時可用。
+- [[dialog.trace_objects]]：[[dialog.trace_merge_adjacent]]（預設開啟）把一種色彩的所有區域合成一條曲線；關閉時，每個獨立的色塊是一條單獨的曲線。[[dialog.trace_remove_overlap]] 讓每個形狀只佔自己的像素，保留孔洞；關閉時，形狀完整地畫在其內部形狀之下（頭部在眼睛之下）。無論哪種情況，相鄰形狀沿邊界共用一條曲線，因此不會出現縫隙，線框中每條邊界只顯示一次。[[dialog.trace_group_by_color]] 把每種色彩的曲線放進各自的群組；當一種色彩的區域尚未合併時可用。
 - [[dialog.delete_original]]：放置描繪結果時刪除點陣圖。
 
 不適用於目前描繪類型的設定會顯示為灰色：中心線描繪只讀取細節和平滑度。

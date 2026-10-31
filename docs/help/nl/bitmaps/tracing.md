@@ -85,13 +85,14 @@ Het tabblad [[dialog.trace_tab_settings]] bevat:
   [[dialog.trace_remove_specify]] gebruikt de kleur van het staal, die u
   kunt wijzigen of met de pipet ernaast uit de voorvertoning kunt kiezen.
 - [[dialog.trace_objects]]: [[dialog.trace_merge_adjacent]] (aanvankelijk
-  aan) maakt van elk vlak van een kleur één curve; uit, wordt elk los
-  stukje een eigen curve. [[dialog.trace_remove_overlap]] houdt elke vorm
-  op haar eigen pixels; uit, reiken vormen een beetje onder de vormen
-  erboven, zodat tussen buren geen kieren verschijnen.
-  [[dialog.trace_group_by_color]] zet de curven van elke kleur in een eigen
-  groep; het is beschikbaar wanneer de vlakken van een kleur niet al
-  samengevoegd zijn.
+  aan) maakt van elk vlak van een kleur één curve; uit, wordt elk los stukje
+  een eigen curve. [[dialog.trace_remove_overlap]] houdt elke vorm op haar
+  eigen pixels, gaten inbegrepen; uit, wordt een vorm heel getekend onder de
+  vormen erin (een hoofd onder zijn ogen). Hoe dan ook delen buren één curve
+  langs hun grens, zodat er geen kieren verschijnen en het draadmodel elke
+  grens één keer toont. [[dialog.trace_group_by_color]] zet de curven van
+  elke kleur in een eigen groep; het is beschikbaar wanneer de vlakken van
+  een kleur niet al samengevoegd zijn.
 - [[dialog.delete_original]]: de bitmap verdwijnt zodra het resultaat
   wordt geplaatst.
 

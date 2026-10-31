@@ -148,10 +148,11 @@ pane, the wireframe and the counts take the result when it comes in.
   patch (8-connected) of a colour is a curve of its own, with its holes.
   In this tracer every region of a colour is found at once, so "adjacent"
   joins every region of the colour, not only the touching ones.
-- Remove object overlap (off): a region reaches 2 px under the regions
-  drawn over it (the underlap of #611), so no page shows between
-  neighbours. On: each region is exactly its own pixels, as the counts
-  of nodes then show; gaps can show between curves fitted on their own.
+- Remove object overlap (off): a region is drawn whole under the
+  regions in its holes (step 3 below), so its curve is its outline
+  alone. On: each region is exactly its own pixels, holes and all.
+  Either way, where two regions meet both use the same curve, so no
+  page shows between them and no curve runs beside another (#1250).
 - Group objects by color (off): on, the trace's group holds a group per
   colour (in the order the colours stack), each with that colour's
   curves.
@@ -270,18 +271,31 @@ can be undone.
    of a pixel on a straight edge, or a notch in one). Corners, the
    pixels of a line one pixel wide (their own on two sides) and its end
    stay.
-3. For each colour, the boundary rings of its mask along the pixel
-   edges, looked for in the box of its pixels only. A region's mask also
-   takes the pixels of the regions stacked above it (lighter ones, not
-   the background) within 2 px of its own, so it reaches a little under
-   its neighbours: their curves are fitted each on its own, but no page
-   shows between them (#611). A region with no lighter region drawn over
-   it is not grown. Unless Remove object overlap is on, every hole of
-   the mask (4-connected) that holds only regions stacked above it is
-   filled: the region is drawn whole under them, so its curve is its
-   outline alone and the edges inside are drawn once, by the regions on
-   top (a black outline drawing becomes one silhouette under its
-   colours).
+3. The borders between the regions, along the pixel edges, are found
+   once over the whole picture: each runs from one junction (a pixel
+   corner where three regions meet, or two meet diagonally; the
+   picture's edge and the background taken out count as a region) to
+   the next, or round a loop (an island inside one region). Each border
+   is fitted once (step 4), and every region's rings are put together
+   from the borders around it, forwards on one side and backwards on the
+   other, turning right where a region touches itself at a corner. Where
+   two regions meet, their outlines are the same curve: no gap, no
+   overlap, and no second curve a pixel or two beside the first (#1250;
+   before, each region was fitted on its own and reached 2 px under its
+   lighter neighbours, so the wireframe showed two curves along every
+   border and the nodes were doubled). The colours stack bottom first:
+   a colour found in another's holes (with no page showing in the hole)
+   above it, the head under its eyes and cheeks; among the colours free
+   to go next the darkest; colours in each other's holes (black eyes in
+   a yellow head inside a black outline) darkest first. Unless Remove
+   object overlap is on, every hole of a region (4-connected) that holds
+   only regions stacked above it is filled: the region is drawn whole
+   under them, so its curve is its outline alone and the edges inside
+   are drawn once, by the regions on top (a black outline drawing
+   becomes one silhouette under its colours, a head one ring under its
+   eyes). Regions side by side meet along their shared curve, as in the
+   trace the program that wrote the #1250 sample made of the same
+   picture (each region one ring, the borders coinciding).
 4. Smoothing 0: each ring as straight lines along the pixel edges
    (Douglas-Peucker, tolerance `0.3 + (100 - detail) / 100 * 2.5` px).
    Otherwise each ring is fitted (#611):
@@ -294,6 +308,9 @@ can be undone.
      keeps its corners;
    - the points between corners smoothed `round(1 + smoothing * 0.12)`
      times with weights 1, 2, 1;
+   - a border between two junctions keeps its ends on them, where the
+     borders of the other regions meeting there end too, and is fitted
+     like a stretch between corners;
    - each stretch between corners (a ring without corners in quarters
      meeting smoothly) fitted with as few cubic Beziers as keep every
      point within `0.2 + (100 - detail) / 100 * 2` px (1 px at the
@@ -304,7 +321,7 @@ can be undone.
      (P. J. Schneider, "An Algorithm for Automatically Fitting Digitized
      Curves", Graphics Gems, 1990). Ends take the direction over 4
      points.
-5. Stack regions dark to light; leave out the background (see Remove
+5. Stack regions as step 3 orders them; leave out the background (see Remove
    above) when requested. The background found (no colour specified) is
    the commonest colour on the picture's edge; when no colour touches
    the edge (art on a transparent background) there is none and nothing
@@ -432,8 +449,19 @@ width equal to the mean local thickness.
   pixels inside the disc showing the page (about 3800 of 9800 before).
 - `trace::tests::neighbouring_regions_leave_no_gaps_and_edges_make_no_slivers`:
   an anti-aliased yellow disc crossed by a black band on white, Clipart
-  preset: two or three regions, and drawn back no pixel more than 2 px
-  inside the art is white or lets the page through.
+  preset: two or three regions, no point more than 2 px inside the art
+  outside every curve or inside a white one, and the band's edges one
+  curve shared by both colours (under 1 in 20 points along the curves
+  running beside another curve instead of on it).
+- `trace::tests::neighbouring_regions_share_one_curve_on_each_border`
+  (#1250): an anti-aliased bee (a yellow head with black eyes and orange
+  cheeks, blue wings beside it, a body of black and yellow stripes),
+  Clipart preset: under 1 in 20 points along the curves lie 0.05 to
+  2.5 px beside another curve (the doubled borders), no point 3 px
+  inside the art outside every curve, the head one yellow ring under its
+  eyes; the same with Merge adjacent off and with smoothing 0.
+- `trace::tests::borders_meet_at_junctions_and_islands_are_loops`,
+  `trace::tests::colours_inside_holes_stack_above_the_one_around`.
 - `trace::tests::compressed_flat_art_traces_as_few_clean_regions`: a
   yellow disc with a black band and a 3 px dark bar on white,
   anti-aliased, with noise of up to 6 and blue bled a pixel sideways,

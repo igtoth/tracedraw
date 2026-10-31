@@ -86,8 +86,10 @@ A guia [[dialog.trace_tab_settings]] contém:
 - [[dialog.trace_objects]]: [[dialog.trace_merge_adjacent]] (ligado no
   início) faz uma só curva de cada área de uma cor; desligado, cada mancha
   separada é uma curva própria. [[dialog.trace_remove_overlap]] mantém cada
-  forma nos próprios pixels; desligado, as formas avançam um pouco sob as
-  de cima, para que não apareçam frestas entre vizinhas.
+  forma nos próprios pixels, com seus furos; desligado, uma forma é
+  desenhada inteira sob as formas dentro dela (uma cabeça sob os olhos). De
+  qualquer modo, vizinhas compartilham uma curva ao longo da borda, então
+  não aparecem frestas e o aramado mostra cada borda uma vez.
   [[dialog.trace_group_by_color]] põe as curvas de cada cor em um grupo
   próprio; fica disponível quando as áreas de uma cor ainda não estão
   mescladas.

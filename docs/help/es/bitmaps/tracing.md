@@ -87,12 +87,14 @@ La pestaña [[dialog.trace_tab_settings]] contiene:
   la muestra, que puede cambiar o tomar de la vista previa con el
   cuentagotas de al lado.
 - [[dialog.trace_objects]]: [[dialog.trace_merge_adjacent]] (activado al
-  principio) hace una sola curva de cada área de un color; desactivado,
-  cada mancha separada es una curva propia. [[dialog.trace_remove_overlap]]
-  mantiene cada forma en sus propios píxeles; desactivado, las formas se
-  extienden un poco bajo las de encima, para que no se vean huecos entre
-  vecinas. [[dialog.trace_group_by_color]] pone las curvas de cada color en
-  un grupo propio; está disponible cuando las áreas de un color no están ya
+  principio) hace una sola curva de cada área de un color; desactivado, cada
+  mancha separada es una curva propia. [[dialog.trace_remove_overlap]]
+  mantiene cada forma en sus propios píxeles, con sus huecos; desactivado,
+  una forma se dibuja entera bajo las formas que contiene (una cabeza bajo
+  sus ojos). En ambos casos las vecinas comparten una curva en su borde, así
+  que no se ven huecos y la vista Líneas de dibujo muestra cada borde una
+  vez. [[dialog.trace_group_by_color]] pone las curvas de cada color en un
+  grupo propio; está disponible cuando las áreas de un color no están ya
   combinadas.
 - [[dialog.delete_original]]: el mapa de bits desaparece al colocar el
   resultado.

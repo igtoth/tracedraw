@@ -78,13 +78,15 @@ Karta [[dialog.trace_tab_settings]] obsahuje:
   [[dialog.trace_remove_auto]] najde barvu pozadí podél okraje obrázku;
   [[dialog.trace_remove_specify]] použije barvu vzorku, kterou můžete změnit
   nebo nabrat z náhledu kapátkem vedle něj.
-- [[dialog.trace_objects]]: [[dialog.trace_merge_adjacent]] (výchozí zapnuto)
-  udělá z každé oblasti jedné barvy jednu křivku; vypnuto, každá samostatná
-  plocha je vlastní křivkou. [[dialog.trace_remove_overlap]] drží každý tvar u
-  jeho vlastních pixelů; vypnuto, tvary sahají kousek pod tvary nad nimi, aby
-  mezi sousedy nebyly mezery. [[dialog.trace_group_by_color]] dá křivky každé
-  barvy do vlastní skupiny; je dostupné, když oblasti jedné barvy nejsou už
-  sloučeny.
+- [[dialog.trace_objects]]: [[dialog.trace_merge_adjacent]] (výchozí
+  zapnuto) udělá z každé oblasti jedné barvy jednu křivku; vypnuto, každá
+  samostatná plocha je vlastní křivkou. [[dialog.trace_remove_overlap]] drží
+  každý tvar u jeho vlastních pixelů i s otvory; vypnuto, tvar se kreslí
+  celý pod tvary uvnitř něj (hlava pod očima). V obou případech sdílejí
+  sousedé na své hranici jednu křivku, takže nevznikají mezery a drátěný
+  model ukazuje každou hranici jednou. [[dialog.trace_group_by_color]] dá
+  křivky každé barvy do vlastní skupiny; je dostupné, když oblasti jedné
+  barvy nejsou už sloučeny.
 - [[dialog.delete_original]]: bitmapa po umístění vektorizace zmizí.
 
 Nastavení, která se na aktuální typ vektorizace nevztahují, jsou zašedlá:

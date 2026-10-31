@@ -837,19 +837,7 @@ fn outline(img: &RgbaImage, s: &Settings, cancel: Option<&Cancel>) -> Option<Vec
         clear_border_region(&mut labels, w, h, bg);
         background = None;
     }
-    // 3. Per colour, darkest first (so lighter regions stack on top),
-    // extract the boundary contours of the mask.
-    let mut order: Vec<usize> = (0..palette.len()).collect();
-    order.sort_by_key(|i| {
-        let c = palette[*i];
-        (c[0] as u32 * 299 + c[1] as u32 * 587 + c[2] as u32 * 114) / 1000
-    });
-    let tolerance = 0.3 + (100.0 - s.detail) / 100.0 * 2.5;
-    let mut rank = vec![0usize; palette.len()];
-    for (k, ci) in order.iter().enumerate() {
-        rank[*ci] = k;
-    }
-    // The box of each colour's pixels, in one pass.
+    // 3. The box of each colour's pixels, in one pass.
     let mut boxes = vec![(w, h, 0usize, 0usize); palette.len()];
     for (i, l) in labels.iter().enumerate() {
         if let Some(b) = boxes.get_mut(*l) {
@@ -858,6 +846,71 @@ fn outline(img: &RgbaImage, s: &Settings, cancel: Option<&Cancel>) -> Option<Vec
         }
     }
     let present: Vec<bool> = boxes.iter().map(|b| b.0 <= b.2).collect();
+    // The background taken out is no region.
+    let regions: std::borrow::Cow<[usize]> = match background {
+        Some(bg) => labels
+            .iter()
+            .map(|l| if *l == bg { usize::MAX } else { *l })
+            .collect::<Vec<usize>>()
+            .into(),
+        None => labels.as_slice().into(),
+    };
+    // The order the colours stack in: a colour inside another's holes
+    // (the eyes in a head) above it, so the one around is drawn whole
+    // under it, as one ring; else darkest first (#1250).
+    let luma: Vec<u32> = palette
+        .iter()
+        .map(|c| (c[0] as u32 * 299 + c[1] as u32 * 587 + c[2] as u32 * 114) / 1000)
+        .collect();
+    // The holes of each colour with no page showing in them: their
+    // pixels (in the colour's box) and the colours in them.
+    let mut holes: Vec<Vec<(Vec<u32>, Vec<usize>)>> = vec![Vec::new(); palette.len()];
+    let order = if s.remove_overlap {
+        let mut order: Vec<usize> = (0..palette.len()).collect();
+        order.sort_by_key(|i| luma[*i]);
+        order
+    } else {
+        let mut inside: Vec<Vec<bool>> = vec![vec![false; palette.len()]; palette.len()];
+        let mut seen = vec![false; palette.len()];
+        for ci in 0..palette.len() {
+            if !present[ci] || Some(ci) == background {
+                continue;
+            }
+            if cancelled(cancel) {
+                return None;
+            }
+            let (x0, y0, x1, y1) = boxes[ci];
+            let (cw, ch) = (x1 - x0 + 1, y1 - y0 + 1);
+            let label_at = |i: usize| regions[(y0 + i / cw) * w + x0 + i % cw];
+            let own: Vec<bool> = (0..cw * ch).map(|i| label_at(i) == ci).collect();
+            for_each_hole(&own, cw, ch, |hole| {
+                seen.fill(false);
+                for &i in hole {
+                    match seen.get_mut(label_at(i)) {
+                        Some(v) => *v = true,
+                        // The page shows in this hole: it stays one.
+                        None => return,
+                    }
+                }
+                let colours: Vec<usize> = (0..seen.len()).filter(|l| seen[*l]).collect();
+                for &l in &colours {
+                    inside[ci][l] = true;
+                }
+                holes[ci].push((hole.iter().map(|i| *i as u32).collect(), colours));
+            });
+        }
+        stacking_order(&inside, &luma)
+    };
+    let tolerance = 0.3 + (100.0 - s.detail) / 100.0 * 2.5;
+    let mut rank = vec![0usize; palette.len()];
+    for (k, ci) in order.iter().enumerate() {
+        rank[*ci] = k;
+    }
+    // The borders between the regions, each fitted once: every region's
+    // rings are put together from them, so where two regions meet their
+    // outlines are the same curve, with no gap between them and no second
+    // curve beside the first (#611, #1250).
+    let shared = SharedBorders::new(&regions, w, h, tolerance, s, cancel)?;
     let mut out = Vec::new();
     for ci in order {
         if Some(ci) == background || !present[ci] {
@@ -866,51 +919,23 @@ fn outline(img: &RgbaImage, s: &Settings, cancel: Option<&Cancel>) -> Option<Vec
         if cancelled(cancel) {
             return None;
         }
-        // Each region reaches a little under the regions drawn above it,
-        // so their curves, fitted each on its own, leave no page showing
-        // between neighbours (#611). Only the box of its pixels, grown by
-        // that much, is looked at, and nothing grows with no lighter
-        // region drawn above it. Remove overlap keeps every region to its
-        // own pixels.
-        let above = !s.remove_overlap
-            && (0..palette.len())
-                .any(|l| present[l] && Some(l) != background && rank[l] > rank[ci]);
-        let grow = if above { UNDERLAP } else { 0 };
-        let (bx0, by0, bx1, by1) = boxes[ci];
-        let (x0, y0) = (bx0.saturating_sub(grow), by0.saturating_sub(grow));
-        let (x1, y1) = ((bx1 + grow).min(w - 1), (by1 + grow).min(h - 1));
+        let (x0, y0, x1, y1) = boxes[ci];
         let (cw, ch) = (x1 - x0 + 1, y1 - y0 + 1);
-        let label_at = |i: usize| labels[(y0 + i / cw) * w + x0 + i % cw];
+        let label_at = |i: usize| regions[(y0 + i / cw) * w + x0 + i % cw];
         let own: Vec<bool> = (0..cw * ch).map(|i| label_at(i) == ci).collect();
-        let mask: Vec<bool> = if above {
-            let near = dilate(&own, cw, ch, UNDERLAP);
-            (0..cw * ch)
-                .map(|i| {
-                    let l = label_at(i);
-                    own[i]
-                        || (near[i]
-                            && l != usize::MAX
-                            && Some(l) != background
-                            && rank[l] > rank[ci])
-                })
-                .collect()
-        } else {
-            own
-        };
         // Stacked: the holes of the region holding only regions drawn
         // above it are part of it, so its curve is the outline alone and
-        // the edges inside are drawn once, by the regions on top.
-        let mask = if s.remove_overlap {
-            mask
-        } else {
-            let above = |i: usize| {
-                let l = label_at(i);
-                l != usize::MAX
-                    && Some(l) != background
-                    && rank.get(l).is_some_and(|r| *r > rank[ci])
-            };
-            fill_holes(&mask, cw, ch, above)
-        };
+        // the edges inside are drawn once, by the regions on top, which
+        // leave no page showing between them and it. Remove overlap keeps
+        // every region to its own pixels (no holes were looked for).
+        let mut mask = own;
+        for (pixels, colours) in &holes[ci] {
+            if colours.iter().all(|l| rank[*l] > rank[ci]) {
+                for &i in pixels {
+                    mask[i as usize] = true;
+                }
+            }
+        }
         // One curve for the colour (every region combined), or one per
         // separate patch of it.
         let pieces: Vec<((usize, usize), usize, usize, Vec<bool>)> = if s.merge_adjacent {
@@ -928,8 +953,7 @@ fn outline(img: &RgbaImage, s: &Settings, cancel: Option<&Cancel>) -> Option<Vec
             if cancelled(cancel) {
                 return None;
             }
-            let offset = tracedraw_core::geometry::Vec2::new(ox as f64, oy as f64);
-            let path = rings_path(&piece, pw, ph, offset, tolerance, s, cancel)?;
+            let path = shared.rings(&piece, (ox, oy), pw, ph, cancel)?;
             if path.elements().is_empty() {
                 continue;
             }
@@ -950,6 +974,7 @@ const MERGE_REACH: u32 = 12;
 /// The boundary rings of `mask` (`w` x `h`, at `offset` in the picture)
 /// as one path: each ring fitted, or simplified to straight lines without
 /// smoothing.
+#[cfg(test)]
 fn rings_path(
     mask: &[bool],
     w: usize,
@@ -959,39 +984,433 @@ fn rings_path(
     s: &Settings,
     cancel: Option<&Cancel>,
 ) -> Option<BezPath> {
-    let mut path = BezPath::new();
-    for ring in contours(mask, w, h) {
-        // One colour merged into a single piece can hold thousands of
-        // rings: look at the flag between them.
+    let labels: Vec<usize> = mask
+        .iter()
+        .map(|m| if *m { 0 } else { usize::MAX })
+        .collect();
+    let fitted = SharedBorders::new(&labels, w, h, tolerance, s, cancel)?;
+    let path = fitted.rings(mask, (0, 0), w, h, cancel)?;
+    Some(tracedraw_core::geometry::Affine::translate(offset) * path)
+}
+
+// ----- shared borders -------------------------------------------------------------
+
+/// The unit steps along the pixel edges, from a pixel corner: east,
+/// south, west, north (picture space, y down).
+const STEPS: [(i64, i64); 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
+
+/// The pixels on either side of the step `d` from the corner `(x, y)`:
+/// the `a` side first (the side a region's rings keep it on, as in
+/// clockwise rings on screen), then the `b` side.
+fn step_sides(x: i64, y: i64, d: u8) -> ((i64, i64), (i64, i64)) {
+    match d {
+        0 => ((x, y), (x, y - 1)),
+        1 => ((x - 1, y), (x, y)),
+        2 => ((x - 1, y - 1), (x - 1, y)),
+        _ => ((x, y - 1), (x - 1, y - 1)),
+    }
+}
+
+/// A stretch of the border between two regions of a labelling, along the
+/// pixel edges: from one junction to the next (a pixel corner where
+/// three regions meet, or two meet diagonally), or round a loop with no
+/// junction (an island inside one other region). The region with the
+/// smaller label is on its `a` side.
+struct Border {
+    /// The pixel corner it starts at and the one it ends at.
+    start: (i64, i64),
+    end: (i64, i64),
+    /// The direction of each unit step (an index into [`STEPS`]).
+    steps: Vec<u8>,
+    /// Round a loop: it ends where it starts, with no junction on it.
+    closed: bool,
+    /// The pixel on each side of its first step (`None` outside the
+    /// picture).
+    a: Option<usize>,
+    b: Option<usize>,
+}
+
+impl Border {
+    /// The pixel corners it passes, from its start to its end.
+    fn corners(&self) -> Vec<Point> {
+        let mut out = Vec::with_capacity(self.steps.len() + 1);
+        let (mut x, mut y) = self.start;
+        out.push(Point::new(x as f64, y as f64));
+        for d in &self.steps {
+            let (dx, dy) = STEPS[*d as usize & 3];
+            x += dx;
+            y += dy;
+            out.push(Point::new(x as f64, y as f64));
+        }
+        out
+    }
+}
+
+/// The borders between the regions of `labels` (`w` x `h`; `usize::MAX`
+/// is no region: transparent, or the background taken out). Every edge
+/// between two pixels of different labels, and between a region and the
+/// picture's edge, is on exactly one border. `None` once `cancel` is set.
+fn borders(labels: &[usize], w: usize, h: usize, cancel: Option<&Cancel>) -> Option<Vec<Border>> {
+    let mut out = Vec::new();
+    if labels.len() != w * h || w == 0 || h == 0 {
+        return Some(out);
+    }
+    // The labels with a frame of no region round them, so the four pixels
+    // round every pixel corner can be read without looking at the edges.
+    let pw = w + 2;
+    let mut framed = vec![usize::MAX; pw * (h + 2)];
+    for y in 0..h {
+        framed[(y + 1) * pw + 1..(y + 1) * pw + 1 + w].copy_from_slice(&labels[y * w..(y + 1) * w]);
+    }
+    // For each pixel corner, the steps from it along an edge between two
+    // labels, walked one way only, with the smaller label on the step's
+    // `a` side (bits 0 to 3, see [`step_sides`]), and whether it is a
+    // junction (bit 4): three labels or more round it, or two diagonally.
+    const JUNCTION: u8 = 1 << 4;
+    let cw = w + 1;
+    let mut info = vec![0u8; cw * (h + 1)];
+    for y in 0..=h {
+        if y % 64 == 0 && cancelled(cancel) {
+            return None;
+        }
+        let (r0, r1) = (y * pw, (y + 1) * pw);
+        for x in 0..=w {
+            let (tl, tr, bl, br) = (
+                framed[r0 + x],
+                framed[r0 + x + 1],
+                framed[r1 + x],
+                framed[r1 + x + 1],
+            );
+            if tl == tr && tl == bl && tl == br {
+                continue;
+            }
+            let outs = (br < tr) as u8
+                | ((bl < br) as u8) << 1
+                | ((tl < bl) as u8) << 2
+                | ((tr < tl) as u8) << 3;
+            let distinct = 1
+                + (tr != tl) as usize
+                + (bl != tl && bl != tr) as usize
+                + (br != tl && br != tr && br != bl) as usize;
+            let junction = distinct >= 3 || (distinct == 2 && tl == br && tr == bl);
+            info[y * cw + x] = outs | if junction { JUNCTION } else { 0 };
+        }
+    }
+    let pixel = |(x, y): (i64, i64)| -> Option<usize> {
+        (x >= 0 && y >= 0 && x < w as i64 && y < h as i64).then(|| y as usize * w + x as usize)
+    };
+    let corner = |x: i64, y: i64| y as usize * cw + x as usize;
+    // The steps already walked, per corner.
+    let mut used = vec![0u8; cw * (h + 1)];
+    let limit = 4 * cw * (h + 1);
+    let walk = |x0: i64, y0: i64, d0: u8, used: &mut [u8]| -> Border {
+        let (a, b) = step_sides(x0, y0, d0);
+        let mut steps = vec![d0];
+        used[corner(x0, y0)] |= 1 << d0;
+        let (mut x, mut y) = (x0 + STEPS[d0 as usize].0, y0 + STEPS[d0 as usize].1);
+        let mut closed = false;
+        while steps.len() <= limit {
+            let here = info[corner(x, y)];
+            if (x, y) == (x0, y0) {
+                closed = here & JUNCTION == 0;
+                break;
+            }
+            if here & JUNCTION != 0 {
+                break;
+            }
+            let free = here & 0xF & !used[corner(x, y)];
+            if free == 0 {
+                break;
+            }
+            let d = free.trailing_zeros() as u8;
+            used[corner(x, y)] |= 1 << d;
+            steps.push(d);
+            x += STEPS[d as usize].0;
+            y += STEPS[d as usize].1;
+        }
+        Border {
+            start: (x0, y0),
+            end: (x, y),
+            steps,
+            closed,
+            a: pixel(a),
+            b: pixel(b),
+        }
+    };
+    // The borders from junction to junction, then the loops.
+    for pass in 0..2 {
+        for y in 0..=h {
+            if y % 64 == 0 && cancelled(cancel) {
+                return None;
+            }
+            for x in 0..=w {
+                let i = y * cw + x;
+                if info[i] == 0 || (pass == 0 && info[i] & JUNCTION == 0) {
+                    continue;
+                }
+                loop {
+                    let free = info[i] & 0xF & !used[i];
+                    if free == 0 {
+                        break;
+                    }
+                    let d = free.trailing_zeros() as u8;
+                    out.push(walk(x as i64, y as i64, d, &mut used));
+                }
+            }
+        }
+    }
+    Some(out)
+}
+
+/// The side of the squares [`SharedBorders`] files its borders in, pixels.
+const BORDER_TILE: i64 = 64;
+
+/// The borders of a labelling, each fitted once ([`fit_border`]), and the
+/// rings of any region made of whole regions of it put together from
+/// them: where two regions meet, both use the same curve, one forwards,
+/// the other backwards, so their outlines coincide exactly, with no gap
+/// and no second curve beside the first (#611, #1250).
+struct SharedBorders {
+    w: usize,
+    borders: Vec<Border>,
+    curves: Vec<BezPath>,
+    /// The borders starting in each square of [`BORDER_TILE`].
+    tiles: Vec<Vec<u32>>,
+    tiles_across: usize,
+}
+
+impl SharedBorders {
+    fn new(
+        labels: &[usize],
+        w: usize,
+        h: usize,
+        tolerance: f64,
+        s: &Settings,
+        cancel: Option<&Cancel>,
+    ) -> Option<SharedBorders> {
+        let borders = borders(labels, w, h, cancel)?;
+        let mut curves = Vec::with_capacity(borders.len());
+        for (k, b) in borders.iter().enumerate() {
+            if k % 256 == 0 && cancelled(cancel) {
+                return None;
+            }
+            curves.push(fit_border(b, tolerance, s));
+        }
+        let tiles_across = w / BORDER_TILE as usize + 1;
+        let mut tiles = vec![Vec::new(); tiles_across * (h / BORDER_TILE as usize + 1)];
+        for (k, b) in borders.iter().enumerate() {
+            let t = (b.start.1 / BORDER_TILE) as usize * tiles_across
+                + (b.start.0 / BORDER_TILE) as usize;
+            if let Some(v) = tiles.get_mut(t) {
+                v.push(k as u32);
+            }
+        }
+        Some(SharedBorders {
+            w,
+            borders,
+            curves,
+            tiles,
+            tiles_across,
+        })
+    }
+
+    /// The rings of `mask` (`mw` x `mh` at `(ox, oy)` in the picture),
+    /// which must be made of whole regions of the labelling, as one path
+    /// of the fitted borders. `None` once `cancel` is set.
+    fn rings(
+        &self,
+        mask: &[bool],
+        (ox, oy): (usize, usize),
+        mw: usize,
+        mh: usize,
+        cancel: Option<&Cancel>,
+    ) -> Option<BezPath> {
+        let w = self.w;
+        let inside = |p: Option<usize>| {
+            p.is_some_and(|p| {
+                let (x, y) = (p % w, p / w);
+                x >= ox
+                    && y >= oy
+                    && x < ox + mw
+                    && y < oy + mh
+                    && mask.get((y - oy) * mw + (x - ox)).copied().unwrap_or(false)
+            })
+        };
+        // The borders between the mask and the rest, each turned so the
+        // mask is on its `a` side: (border, forwards).
+        let mut open: Vec<(usize, bool)> = Vec::new();
+        let mut path = BezPath::new();
+        let (x0, y0) = (ox as i64, oy as i64);
+        let (x1, y1) = ((ox + mw) as i64, (oy + mh) as i64);
+        for ty in (y0 / BORDER_TILE)..=(y1 / BORDER_TILE) {
+            for tx in (x0 / BORDER_TILE)..=(x1 / BORDER_TILE) {
+                let Some(list) = self
+                    .tiles
+                    .get(ty as usize * self.tiles_across + tx as usize)
+                else {
+                    continue;
+                };
+                for &k in list {
+                    let b = &self.borders[k as usize];
+                    let (sx, sy) = b.start;
+                    if sx < x0 || sy < y0 || sx > x1 || sy > y1 {
+                        continue;
+                    }
+                    let (ia, ib) = (inside(b.a), inside(b.b));
+                    if ia == ib {
+                        continue;
+                    }
+                    if b.closed {
+                        append_curve(&mut path, &self.curves[k as usize], ia, true);
+                    } else {
+                        open.push((k as usize, ia));
+                    }
+                }
+            }
+        }
         if cancelled(cancel) {
             return None;
         }
-        if ring.len() < 3 {
-            continue;
-        }
-        let ring: Vec<Point> = ring.into_iter().map(|p| p + offset).collect();
-        // Without smoothing the pixels' own edges, steps and all.
-        if s.smoothing <= 0.0 {
-            let simplified = tracedraw_core::geometry::simplify(&ring, tolerance);
-            if simplified.len() >= 3 {
-                path.extend(polyline_closed(&simplified));
+        // Chained into rings at the junctions, turning right where the
+        // mask touches itself at a corner, so touching rings stay apart.
+        let ends = |(k, fwd): (usize, bool)| -> ((i64, i64), (i64, i64), u8, u8) {
+            let b = &self.borders[k];
+            let (first, last) = (
+                b.steps.first().copied().unwrap_or(0),
+                b.steps.last().copied().unwrap_or(0),
+            );
+            if fwd {
+                (b.start, b.end, first, last)
+            } else {
+                (b.end, b.start, (last + 2) % 4, (first + 2) % 4)
             }
-            continue;
+        };
+        let mut from: std::collections::HashMap<(i64, i64), Vec<usize>> =
+            std::collections::HashMap::with_capacity(open.len());
+        for (i, o) in open.iter().enumerate() {
+            from.entry(ends(*o).0).or_default().push(i);
         }
-        path.extend(fit_ring(&ring, s));
+        let mut taken = vec![false; open.len()];
+        for first in 0..open.len() {
+            if taken[first] {
+                continue;
+            }
+            taken[first] = true;
+            let (ring_start, mut at, _, mut dir) = ends(open[first]);
+            path.move_to(Point::new(ring_start.0 as f64, ring_start.1 as f64));
+            append_curve(&mut path, &self.curves[open[first].0], open[first].1, false);
+            let mut guard = open.len();
+            while at != ring_start && guard > 0 {
+                guard -= 1;
+                let Some(next) = from.get(&at).and_then(|c| {
+                    let free = || c.iter().copied().filter(|i| !taken[*i]);
+                    let turning = |t: u8| free().find(|i| ends(open[*i]).2 == t);
+                    turning((dir + 1) % 4)
+                        .or_else(|| turning(dir))
+                        .or_else(|| free().next())
+                }) else {
+                    break;
+                };
+                taken[next] = true;
+                append_curve(&mut path, &self.curves[open[next].0], open[next].1, false);
+                let (_, e, _, l) = ends(open[next]);
+                at = e;
+                dir = l;
+            }
+            path.close_path();
+        }
+        Some(path)
     }
-    Some(path)
 }
 
-/// `mask` (`w` x `h`) with every hole filled whose pixels are all `fill`:
-/// a hole is a 4-connected patch of unset pixels not reaching the box's
-/// edge. Filling a region's holes that hold only regions drawn over it
-/// changes nothing that shows, and leaves one ring where the holes made
-/// one each.
-fn fill_holes(mask: &[bool], w: usize, h: usize, fill: impl Fn(usize) -> bool) -> Vec<bool> {
-    let mut out = mask.to_vec();
-    if mask.len() != w * h || w < 3 || h < 3 {
+/// Append `curve` (a border's fitted curve: a move then lines and
+/// curves, closed for a loop) to `path`, forwards or backwards. A loop is
+/// appended whole (`closed`); an open border continues the ring `path`
+/// is drawing, from where it ends.
+fn append_curve(path: &mut BezPath, curve: &BezPath, forwards: bool, closed: bool) {
+    use tracedraw_core::geometry::PathEl;
+    let els = curve.elements();
+    let Some(PathEl::MoveTo(p0)) = els.first().copied() else {
+        return;
+    };
+    if forwards {
+        let body = if closed { els } else { &els[1..] };
+        path.extend(body.iter().copied());
+        return;
+    }
+    // Each piece with the point it starts from, then the pieces the other
+    // way round.
+    let mut pieces: Vec<(Point, PathEl)> = Vec::with_capacity(els.len());
+    let mut at = p0;
+    for el in &els[1..] {
+        match *el {
+            PathEl::LineTo(p) | PathEl::QuadTo(_, p) | PathEl::CurveTo(_, _, p) => {
+                pieces.push((at, *el));
+                at = p;
+            }
+            PathEl::ClosePath => {
+                if at != p0 {
+                    pieces.push((at, PathEl::LineTo(p0)));
+                    at = p0;
+                }
+            }
+            PathEl::MoveTo(_) => {}
+        }
+    }
+    if closed {
+        path.move_to(at);
+    }
+    for (start, el) in pieces.into_iter().rev() {
+        match el {
+            PathEl::LineTo(_) => path.line_to(start),
+            PathEl::QuadTo(c, _) => path.quad_to(c, start),
+            PathEl::CurveTo(c1, c2, _) => path.curve_to(c2, c1, start),
+            _ => {}
+        }
+    }
+    if closed {
+        path.close_path();
+    }
+}
+
+/// A border's curve, from its start to its end (closed round a loop):
+/// fitted as a ring is ([`fit_ring`], [`fit_open`]), or simplified to
+/// straight lines along the pixel edges without smoothing.
+fn fit_border(b: &Border, tolerance: f64, s: &Settings) -> BezPath {
+    let mut pts = b.corners();
+    if b.closed {
+        pts.pop();
+    }
+    if s.smoothing <= 0.0 {
+        let simplified = tracedraw_core::geometry::simplify(&pts, tolerance);
+        if b.closed {
+            // A loop that simplifies to a line is left out, on both sides.
+            if simplified.len() < 3 {
+                return BezPath::new();
+            }
+            return polyline_closed(&simplified);
+        }
+        let mut out = BezPath::new();
+        if let Some(first) = simplified.first() {
+            out.move_to(*first);
+            for p in &simplified[1..] {
+                out.line_to(*p);
+            }
+        }
         return out;
+    }
+    if b.closed {
+        fit_ring(&pts, s)
+    } else {
+        fit_open(&pts, s)
+    }
+}
+
+/// Call `f` with the pixels of each hole of `mask` (`w` x `h`): each
+/// 4-connected patch of unset pixels not reaching the box's edge.
+fn for_each_hole(mask: &[bool], w: usize, h: usize, mut f: impl FnMut(&[usize])) {
+    if mask.len() != w * h || w < 3 || h < 3 {
+        return;
     }
     let mut seen = vec![false; w * h];
     let mut stack: Vec<usize> = Vec::new();
@@ -1003,12 +1422,11 @@ fn fill_holes(mask: &[bool], w: usize, h: usize, fill: impl Fn(usize) -> bool) -
         seen[start] = true;
         stack.push(start);
         patch.clear();
-        let (mut edge, mut all) = (false, true);
+        let mut edge = false;
         while let Some(i) = stack.pop() {
             patch.push(i);
             let (x, y) = (i % w, i / w);
             edge |= x == 0 || y == 0 || x + 1 == w || y + 1 == h;
-            all &= fill(i);
             let near = [
                 (x > 0).then(|| i - 1),
                 (x + 1 < w).then(|| i + 1),
@@ -1022,67 +1440,52 @@ fn fill_holes(mask: &[bool], w: usize, h: usize, fill: impl Fn(usize) -> bool) -
                 }
             }
         }
-        if all && !edge {
-            for &i in &patch {
-                out[i] = true;
-            }
+        if !edge {
+            f(&patch);
         }
     }
-    out
 }
 
-/// How far, in pixels, a region reaches under its neighbours drawn above
-/// it: more than the fitting tolerance, so curves of two neighbours never
-/// part.
-const UNDERLAP: usize = 2;
-
-/// `mask` grown by `r` pixels in every direction (a square of side
-/// 2r + 1): running maxima along the rows, then down and up the columns
-/// a row at a time.
-fn dilate(mask: &[bool], w: usize, h: usize, r: usize) -> Vec<bool> {
-    let mut out = vec![false; w * h];
-    if mask.len() != w * h {
-        return out;
-    }
-    let mut rows = vec![false; w * h];
-    for y in 0..h {
-        let line = &mask[y * w..(y + 1) * w];
-        let row = &mut rows[y * w..(y + 1) * w];
-        let mut last: Option<usize> = None;
-        for x in 0..w {
-            if line[x] {
-                last = Some(x);
+/// The order colours stack in, bottom first: a colour found in another's
+/// holes (`inside[a][b]`: `b` in a hole of `a` with no page showing in
+/// it) goes above that one, so the one around is drawn whole under it;
+/// among the colours free to go next the darkest (`luma`) goes first,
+/// and where colours sit in each other's holes (black eyes in a yellow
+/// head inside a black outline) the darkest of them.
+fn stacking_order(inside: &[Vec<bool>], luma: &[u32]) -> Vec<usize> {
+    let n = luma.len();
+    let mut below = vec![0usize; n];
+    for (a, row) in inside.iter().enumerate() {
+        for (b, v) in row.iter().enumerate() {
+            if *v && a != b && b < n {
+                below[b] += 1;
             }
-            row[x] = last.is_some_and(|l| x - l <= r);
-        }
-        last = None;
-        for x in (0..w).rev() {
-            if line[x] {
-                last = Some(x);
-            }
-            row[x] |= last.is_some_and(|l| l - x <= r);
         }
     }
-    // The last set row seen in each column, going down, then going up.
-    let mut last: Vec<Option<usize>> = vec![None; w];
-    for y in 0..h {
-        for x in 0..w {
-            if rows[y * w + x] {
-                last[x] = Some(y);
+    let mut placed = vec![false; n];
+    let mut order = Vec::with_capacity(n);
+    while order.len() < n {
+        let free = (0..n)
+            .filter(|i| !placed[*i] && below[*i] == 0)
+            .min_by_key(|i| (luma[*i], *i));
+        let Some(next) = free.or_else(|| {
+            (0..n)
+                .filter(|i| !placed[*i])
+                .min_by_key(|i| (luma[*i], *i))
+        }) else {
+            break;
+        };
+        placed[next] = true;
+        order.push(next);
+        if let Some(row) = inside.get(next) {
+            for (b, v) in row.iter().enumerate() {
+                if *v && b != next && b < n && !placed[b] {
+                    below[b] = below[b].saturating_sub(1);
+                }
             }
-            out[y * w + x] = last[x].is_some_and(|l| y - l <= r);
         }
     }
-    last.fill(None);
-    for y in (0..h).rev() {
-        for x in 0..w {
-            if rows[y * w + x] {
-                last[x] = Some(y);
-            }
-            out[y * w + x] |= last[x].is_some_and(|l| l - y <= r);
-        }
-    }
-    out
+    order
 }
 
 /// The 4-connected patches of a labelling: each pixel's patch number
@@ -2130,6 +2533,101 @@ fn fit_ring(ring: &[Point], s: &Settings) -> BezPath {
     out
 }
 
+/// A border from one junction to another (`corners`, the pixel corners
+/// it passes) as smooth curves, fitted as [`fit_ring`] fits a ring: the
+/// middles of its pixel edges, its corners, the stretches between them
+/// smoothed and fitted. Its two ends stay on the junctions, where the
+/// borders of the other regions meeting there start and end too.
+fn fit_open(corners: &[Point], s: &Settings) -> BezPath {
+    let mut out = BezPath::new();
+    let Some(&first) = corners.first() else {
+        return out;
+    };
+    let last = corners[corners.len() - 1];
+    // The ends, and one point in the middle of each pixel edge between.
+    let mut pts: Vec<Point> = Vec::with_capacity(corners.len() + 1);
+    pts.push(first);
+    for e in corners.windows(2) {
+        pts.push(e[0].midpoint(e[1]));
+    }
+    pts.push(last);
+    let n = pts.len();
+    out.move_to(first);
+    if n < 5 {
+        for p in &pts[1..] {
+            out.line_to(*p);
+        }
+        return out;
+    }
+    let reach = 3usize.min(n / 4).max(1);
+    let wide = (2 * reach).min(n / 4).max(reach);
+    let threshold = (60.0 + s.corner_smoothness.clamp(0.0, 100.0) * 0.8).to_radians();
+    let at = |i: isize| pts[i.clamp(0, n as isize - 1) as usize];
+    let turn_over = |i: isize, r: usize| {
+        let (a, b, c) = (at(i - r as isize), at(i), at(i + r as isize));
+        let (u, v) = (b - a, c - b);
+        if u.hypot2() < 1e-12 || v.hypot2() < 1e-12 {
+            return 0.0;
+        }
+        u.cross(v).atan2(u.dot(v)).abs()
+    };
+    let turn: Vec<f64> = (0..n as isize).map(|i| turn_over(i, reach)).collect();
+    let corners_at: Vec<usize> = (1..n - 1)
+        .filter(|&i| {
+            turn[i] > threshold
+                && turn_over(i as isize, wide) > threshold
+                && (1..=reach as isize).all(|d| {
+                    let before = turn[(i as isize - d).clamp(0, n as isize - 1) as usize];
+                    let after = turn[(i as isize + d).clamp(0, n as isize - 1) as usize];
+                    turn[i] >= before && turn[i] > after
+                })
+        })
+        .collect();
+    // A corner sits on the pixel corner at one end of its edge (point i
+    // is the middle of the edge from corner i - 1 to corner i), the one
+    // standing further out from its neighbours.
+    let mut fixed = vec![false; n];
+    fixed[0] = true;
+    fixed[n - 1] = true;
+    for &c in &corners_at {
+        fixed[c] = true;
+        let mid = pts[c - 1].midpoint(pts[c + 1]);
+        let (a, b) = (corners[c - 1], corners[c]);
+        pts[c] = if (a - mid).hypot() > (b - mid).hypot() {
+            a
+        } else {
+            b
+        };
+    }
+    let passes = (1.0 + s.smoothing.clamp(0.0, 100.0) / 100.0 * 12.0).round() as usize;
+    for _ in 0..passes {
+        let prev = pts.clone();
+        for i in 1..n - 1 {
+            if fixed[i] {
+                continue;
+            }
+            let (a, c) = (prev[i - 1], prev[i + 1]);
+            pts[i] = Point::new(
+                (a.x + 2.0 * prev[i].x + c.x) / 4.0,
+                (a.y + 2.0 * prev[i].y + c.y) / 4.0,
+            );
+        }
+    }
+    let tolerance = 0.2 + (100.0 - s.detail.clamp(0.0, 100.0)) / 100.0 * 2.0;
+    let mut anchors = vec![0];
+    anchors.extend(corners_at);
+    anchors.push(n - 1);
+    for k in anchors.windows(2) {
+        let piece = &pts[k[0]..=k[1]];
+        let m = piece.len();
+        let far = TANGENT_REACH.min(m - 1);
+        let t1 = unit(piece[far] - piece[0]);
+        let t2 = unit(piece[m - 1 - far] - piece[m - 1]);
+        fit_cubics(piece, t1, t2, tolerance, &mut out);
+    }
+    out
+}
+
 /// How many points away a fitted curve's end direction is taken from.
 const TANGENT_REACH: usize = 4;
 
@@ -2549,95 +3047,6 @@ fn refine(
     Some(palette)
 }
 
-/// Boundary rings of a binary mask (pixel-edge following). Outer rings are
-/// counter-clockwise and holes clockwise, so even-odd filling is right.
-pub fn contours(mask: &[bool], w: usize, h: usize) -> Vec<Vec<Point>> {
-    // Build the set of boundary edges between mask and non-mask cells, then
-    // chain them into rings. Each edge is a directed unit segment keeping
-    // the filled cell on its left.
-    use std::collections::HashMap;
-    let at = |x: i64, y: i64| -> bool {
-        if x < 0 || y < 0 || x >= w as i64 || y >= h as i64 {
-            false
-        } else {
-            mask[y as usize * w + x as usize]
-        }
-    };
-    // Directed edges keyed by start vertex.
-    let mut edges: HashMap<(i64, i64), Vec<(i64, i64)>> = HashMap::new();
-    let mut push = |a: (i64, i64), b: (i64, i64)| edges.entry(a).or_default().push(b);
-    for y in 0..h as i64 {
-        for x in 0..w as i64 {
-            if !at(x, y) {
-                continue;
-            }
-            // Image y grows down; walk so the filled cell is on the left in
-            // image space (clockwise on screen), which flips to CCW in page space.
-            if !at(x, y - 1) {
-                push((x, y), (x + 1, y)); // top edge, left to right
-            }
-            if !at(x + 1, y) {
-                push((x + 1, y), (x + 1, y + 1)); // right edge, down
-            }
-            if !at(x, y + 1) {
-                push((x + 1, y + 1), (x, y + 1)); // bottom edge, right to left
-            }
-            if !at(x - 1, y) {
-                push((x, y + 1), (x, y)); // left edge, up
-            }
-        }
-    }
-    let mut rings = Vec::new();
-    let mut keys: Vec<(i64, i64)> = edges.keys().copied().collect();
-    keys.sort_unstable();
-    for start in keys {
-        while let Some(first) = edges.get_mut(&start).and_then(|v| v.pop()) {
-            let mut ring = vec![Point::new(start.0 as f64, start.1 as f64)];
-            let mut cur = first;
-            let mut prev = start;
-            let mut guard = 0;
-            while cur != start && guard < w * h * 4 {
-                ring.push(Point::new(cur.0 as f64, cur.1 as f64));
-                let Some(nexts) = edges.get_mut(&cur) else {
-                    break;
-                };
-                if nexts.is_empty() {
-                    break;
-                }
-                // Prefer turning right (keeps separate touching rings apart).
-                let dir = (cur.0 - prev.0, cur.1 - prev.1);
-                let right = (-dir.1, dir.0);
-                let pick = nexts
-                    .iter()
-                    .position(|n| (n.0 - cur.0, n.1 - cur.1) == right)
-                    .or_else(|| nexts.iter().position(|n| (n.0 - cur.0, n.1 - cur.1) == dir))
-                    .unwrap_or(0);
-                let next = nexts.remove(pick);
-                prev = cur;
-                cur = next;
-                guard += 1;
-            }
-            // Drop collinear points.
-            let mut compact: Vec<Point> = Vec::new();
-            for p in ring {
-                let n = compact.len();
-                if n >= 2 {
-                    let a = compact[n - 2];
-                    let b = compact[n - 1];
-                    if (b.x - a.x) * (p.y - b.y) - (b.y - a.y) * (p.x - b.x) == 0.0 {
-                        compact.pop();
-                    }
-                }
-                compact.push(p);
-            }
-            if compact.len() >= 3 {
-                rings.push(compact);
-            }
-        }
-    }
-    rings
-}
-
 // ----- centreline mode --------------------------------------------------------
 
 fn centerline(img: &RgbaImage, s: &Settings, cancel: Option<&Cancel>) -> Option<Vec<Traced>> {
@@ -3003,7 +3412,11 @@ mod tests {
                 }
                 inside += 1;
                 let p = out.get_pixel(x, y);
-                if p[3] < 255 || (p[0] > 230 && p[1] > 230 && p[2] > 230) {
+                // Where two colours meet along one curve, each covers part
+                // of the pixels it crosses, and the page shows through at
+                // most a quarter of one (both half covered): a gap lets
+                // more through.
+                if p[3] < 180 || (p[0] > 230 && p[1] > 230 && p[2] > 230) {
                     holes += 1;
                 }
             }
@@ -3210,9 +3623,10 @@ mod tests {
 
     /// Flat art with anti-aliased edges (#611): a yellow disc crossed by a
     /// black band on white, traced with the Clipart preset. Neighbouring
-    /// regions meet with no page showing between them, the in-between
-    /// shades of the edges make no regions of their own, and the trace
-    /// holds about as many regions as the art has colours.
+    /// regions meet with no page showing between them (every point well
+    /// inside the art is inside a curve, of the colour of the art there),
+    /// the in-between shades of the edges make no regions of their own,
+    /// and the trace holds about as many regions as the art has colours.
     #[test]
     fn neighbouring_regions_leave_no_gaps_and_edges_make_no_slivers() {
         const N: u32 = 120;
@@ -3251,13 +3665,12 @@ mod tests {
         let s = Preset::Clipart.settings();
         let t = trace(&img, &s);
         assert!((2..=3).contains(&t.len()), "{} regions", t.len());
-        let out = render_traced(&t, N, N, 1.0);
         for y in 0..N {
             for x in 0..N {
                 // Pixels well inside the art (it covers every pixel within
                 // two of them, so the outline's own fitting at the art's
-                // edge is left out): no white and no transparency, along
-                // the edges between the colours too.
+                // edge is left out): no page, along the edges between the
+                // colours too.
                 let inside = x > 1
                     && y > 1
                     && x + 2 < N
@@ -3271,14 +3684,29 @@ mod tests {
                 if !inside {
                     continue;
                 }
-                let p = out.get_pixel(x, y);
-                assert_eq!(p[3], 255, "page shows at {x},{y}: {p:?}");
-                assert!(
-                    !(p[0] > 230 && p[1] > 230 && p[2] > 230),
-                    "white at {x},{y}: {p:?}"
-                );
+                for k in 0..4 {
+                    let p = Point::new(
+                        x as f64 + 0.125 + 0.25 * k as f64,
+                        y as f64 + 0.375 + 0.125 * k as f64,
+                    );
+                    let top = top_colour_at(&t, p);
+                    assert!(top.is_some(), "page shows at {p:?}");
+                    assert!(
+                        top.is_some_and(|c| c.iter().any(|v| *v < 230)),
+                        "white at {p:?}: {top:?}"
+                    );
+                }
             }
         }
+        let (coincident, apart) = border_distances(&t);
+        assert!(
+            coincident > 200,
+            "the band's edges are shared: {coincident}"
+        );
+        assert!(
+            apart * 20 < coincident,
+            "{apart} apart, {coincident} together"
+        );
     }
 
     /// A pale logo close to its white ground keeps its colour, at the
@@ -3349,21 +3777,6 @@ mod tests {
             colours.iter().any(|c| c[1] > 90 && c[1] < 160),
             "the orange line: {colours:?}"
         );
-    }
-
-    #[test]
-    fn dilation_grows_a_mask_by_a_square() {
-        let (w, h) = (7, 6);
-        let mut mask = vec![false; w * h];
-        mask[2 * w + 3] = true;
-        let d = dilate(&mask, w, h, 2);
-        for y in 0..h {
-            for x in 0..w {
-                let want = (1..=5).contains(&x) && y <= 4;
-                assert_eq!(d[y * w + x], want, "{x},{y}");
-            }
-        }
-        assert!(dilate(&vec![false; w * h], w, h, 2).iter().all(|v| !v));
     }
 
     /// Flat art saved as a compressed image (#611: a bee with a black
@@ -3522,8 +3935,17 @@ mod tests {
                 mask[y * w + x] = false;
             }
         }
-        let rings = contours(&mask, w, 10);
-        assert_eq!(rings.len(), 2);
+        let s = Preset::Logo.settings();
+        let zero = tracedraw_core::geometry::Vec2::new(0.0, 0.0);
+        let Some(path) = rings_path(&mask, w, 10, zero, 0.5, &s, None) else {
+            panic!("not cancelled");
+        };
+        let rings = path
+            .elements()
+            .iter()
+            .filter(|e| matches!(e, tracedraw_core::geometry::PathEl::MoveTo(_)))
+            .count();
+        assert_eq!(rings, 2);
     }
 
     /// A disc on white with white patches inside it (the whites of eyes):
@@ -3623,18 +4045,17 @@ mod tests {
         assert_eq!(p[1].0, (5, 3, 5, 3));
     }
 
-    /// Remove overlap keeps each region to its own pixels: the lower
-    /// region no longer reaches under the one drawn over it.
+    /// Remove overlap keeps each region to its own pixels: the black ring
+    /// no longer reaches under the yellow inside it, as one disc, but
+    /// keeps its hole.
     #[test]
     fn remove_overlap_keeps_regions_to_their_pixels() {
         let img: RgbaImage = ImageBuffer::from_fn(80, 80, |x, y| {
             let d = ((x as f32 - 40.0).powi(2) + (y as f32 - 40.0).powi(2)).sqrt();
-            if d < 30.0 {
-                if y < 40 {
-                    Rgba([0, 0, 0, 255])
-                } else {
-                    Rgba([250, 200, 40, 255])
-                }
+            if d < 18.0 {
+                Rgba([250, 200, 40, 255])
+            } else if d < 30.0 {
+                Rgba([0, 0, 0, 255])
             } else {
                 Rgba([255, 255, 255, 255])
             }
@@ -4213,8 +4634,9 @@ mod tests {
         assert!(palette.len() <= 8, "{palette:?}");
     }
 
-    /// Holes holding only what may be filled are filled; a hole with one
-    /// pixel that may not stays, and so does what reaches the box's edge.
+    /// The holes of a mask: the patch of unset pixels it closes round,
+    /// not what reaches the box's edge (the trace fills a region's holes
+    /// that hold only regions drawn above it).
     #[test]
     fn holes_of_regions_drawn_above_are_filled() {
         let (w, h) = (7, 7);
@@ -4226,9 +4648,313 @@ mod tests {
                     && !((2..5).contains(&x) && (2..5).contains(&y))
             })
             .collect();
-        let filled = fill_holes(&ring, w, h, |_| true);
-        assert!(filled[3 * w + 3] && !filled[0], "the hole, not the outside");
-        let kept = fill_holes(&ring, w, h, |i| i != 3 * w + 3);
-        assert!(!kept[3 * w + 3] && !kept[2 * w + 2]);
+        let mut found: Vec<Vec<usize>> = Vec::new();
+        for_each_hole(&ring, w, h, |hole| found.push(hole.to_vec()));
+        assert_eq!(found.len(), 1, "the hole, not the outside");
+        found[0].sort_unstable();
+        let want: Vec<usize> = (2..5)
+            .flat_map(|y| (2..5).map(move |x| y * w + x))
+            .collect();
+        assert_eq!(found[0], want);
+    }
+
+    /// The colour of the topmost curve whose fill holds `p` (even-odd).
+    fn top_colour_at(t: &[Traced], p: Point) -> Option<[u8; 3]> {
+        t.iter()
+            .rev()
+            .find(|t| t.closed && t.path.winding(p) % 2 != 0)
+            .map(|t| t.color.to_rgb8())
+    }
+
+    /// Where the curves of a trace run along each other: the points along
+    /// each curve (every quarter pixel) that lie on another curve (within
+    /// 0.05 px), and those that run beside one, 0.05 to 2.5 px off it: a
+    /// border drawn twice, once by each region beside it (#1250). Points
+    /// within 3 px of a junction (a pixel corner that is a node of two
+    /// curves or more, where regions meet) are left out: the curves
+    /// leaving it part there.
+    fn border_distances(t: &[Traced]) -> (usize, usize) {
+        use tracedraw_core::geometry::PathEl;
+        let mut nodes: std::collections::HashMap<(i64, i64), Vec<usize>> = Default::default();
+        for (k, c) in t.iter().enumerate() {
+            for el in c.path.elements() {
+                if let PathEl::MoveTo(p) | PathEl::LineTo(p) | PathEl::CurveTo(_, _, p) = el {
+                    if p.x.fract() == 0.0 && p.y.fract() == 0.0 {
+                        let v = nodes.entry((p.x as i64, p.y as i64)).or_default();
+                        if !v.contains(&k) {
+                            v.push(k);
+                        }
+                    }
+                }
+            }
+        }
+        let junctions: Vec<Point> = nodes
+            .iter()
+            .filter(|(_, v)| v.len() >= 2)
+            .map(|((x, y), _)| Point::new(*x as f64, *y as f64))
+            .collect();
+        let near_junction = |p: Point| junctions.iter().any(|j| (p - *j).hypot2() < 9.0);
+        let mut segments: Vec<(usize, Point, Point)> = Vec::new();
+        for (k, c) in t.iter().enumerate() {
+            let mut at = Point::ZERO;
+            let mut start = Point::ZERO;
+            tracedraw_core::geometry::flatten(&c.path, 0.005, &mut |el| match el {
+                PathEl::MoveTo(p) => {
+                    at = p;
+                    start = p;
+                }
+                PathEl::LineTo(p) => {
+                    segments.push((k, at, p));
+                    at = p;
+                }
+                PathEl::ClosePath => {
+                    segments.push((k, at, start));
+                    at = start;
+                }
+                _ => {}
+            });
+        }
+        const CELL: f64 = 3.0;
+        let mut grid: std::collections::HashMap<(i64, i64), Vec<usize>> = Default::default();
+        for (i, (_, a, b)) in segments.iter().enumerate() {
+            let (x0, x1) = (a.x.min(b.x), a.x.max(b.x));
+            let (y0, y1) = (a.y.min(b.y), a.y.max(b.y));
+            for gy in (y0 / CELL).floor() as i64..=(y1 / CELL).floor() as i64 {
+                for gx in (x0 / CELL).floor() as i64..=(x1 / CELL).floor() as i64 {
+                    grid.entry((gx, gy)).or_default().push(i);
+                }
+            }
+        }
+        let to_segment = |p: Point, a: Point, b: Point| {
+            let ab = b - a;
+            let l = ab.hypot2();
+            let t = if l < 1e-12 {
+                0.0
+            } else {
+                ((p - a).dot(ab) / l).clamp(0.0, 1.0)
+            };
+            (p - (a + ab * t)).hypot()
+        };
+        let (mut together, mut apart) = (0, 0);
+        for (k, a, b) in &segments {
+            let n = ((*b - *a).hypot() / 0.25).ceil().max(1.0) as usize;
+            for s in 0..n {
+                let p = a.lerp(*b, s as f64 / n as f64);
+                if near_junction(p) {
+                    continue;
+                }
+                let (gx, gy) = ((p.x / CELL).floor() as i64, (p.y / CELL).floor() as i64);
+                let mut best = f64::INFINITY;
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        for &i in grid.get(&(gx + dx, gy + dy)).into_iter().flatten() {
+                            let (j, c, d) = segments[i];
+                            if j != *k {
+                                best = best.min(to_segment(p, c, d));
+                            }
+                        }
+                    }
+                }
+                if best < 0.05 {
+                    together += 1;
+                } else if best < 2.5 {
+                    apart += 1;
+                }
+            }
+        }
+        (together, apart)
+    }
+
+    /// A bee's head with its eyes, cheeks, wings beside it and stripes
+    /// below (#1250): every border between two colours is one curve that
+    /// both regions use, so their outlines coincide (no second curve a
+    /// pixel or two beside the first, as when each region was fitted on
+    /// its own and reached under the next), no page shows between them,
+    /// and the head, drawn under its eyes and cheeks, is one ring.
+    #[test]
+    fn neighbouring_regions_share_one_curve_on_each_border() {
+        const N: u32 = 160;
+        let yellow = Rgba([255, 204, 53, 255]);
+        let black = Rgba([20, 18, 18, 255]);
+        let blue = Rgba([148, 213, 217, 255]);
+        let orange = Rgba([246, 153, 99, 255]);
+        let white = Rgba([255, 255, 255, 255]);
+        let colour = |x: f64, y: f64| -> Rgba<u8> {
+            let d = |cx: f64, cy: f64| ((x - cx).powi(2) + (y - cy).powi(2)).sqrt();
+            let ellipse = |cx: f64, cy: f64, rx: f64, ry: f64| {
+                ((x - cx) / rx).powi(2) + ((y - cy) / ry).powi(2) < 1.0
+            };
+            if d(80.0, 62.0) < 40.0 {
+                if d(64.0, 58.0) < 7.0 || d(96.0, 58.0) < 7.0 {
+                    black
+                } else if ellipse(60.0, 76.0, 7.0, 4.5) || ellipse(100.0, 76.0, 7.0, 4.5) {
+                    orange
+                } else {
+                    yellow
+                }
+            } else if ellipse(80.0, 118.0, 32.0, 30.0) {
+                // Stripes across the body, side by side.
+                if ((y - 0.15 * x) as i64).rem_euclid(18) < 9 {
+                    black
+                } else {
+                    yellow
+                }
+            } else if ellipse(38.0, 70.0, 30.0, 20.0) || ellipse(122.0, 70.0, 30.0, 20.0) {
+                blue
+            } else {
+                white
+            }
+        };
+        // Anti-aliased, 4 x 4 samples a pixel.
+        let img: RgbaImage = ImageBuffer::from_fn(N, N, |x, y| {
+            let mut sum = [0u32; 3];
+            for sy in 0..4 {
+                for sx in 0..4 {
+                    let c = colour(
+                        x as f64 + (sx as f64 + 0.5) / 4.0,
+                        y as f64 + (sy as f64 + 0.5) / 4.0,
+                    );
+                    for k in 0..3 {
+                        sum[k] += c[k] as u32;
+                    }
+                }
+            }
+            Rgba([
+                (sum[0] / 16) as u8,
+                (sum[1] / 16) as u8,
+                (sum[2] / 16) as u8,
+                255,
+            ])
+        });
+        let mut s = Preset::Clipart.settings();
+        let t = trace(&img, &s);
+        let (together, apart) = border_distances(&t);
+        assert!(together > 1000, "borders shared: {together}");
+        assert!(
+            apart * 20 < together,
+            "{apart} beside another curve, {together} on one"
+        );
+        // No page between the regions: every point well inside the art
+        // (three pixels from its outer edge) is inside a curve.
+        let art = |x: f64, y: f64| colour(x, y) != white;
+        for y in 0..N {
+            for x in 0..N {
+                let p = Point::new(x as f64 + 0.3, y as f64 + 0.6);
+                let deep =
+                    (-3..=3).all(|dy| (-3..=3).all(|dx| art(p.x + dx as f64, p.y + dy as f64)));
+                if deep {
+                    assert!(top_colour_at(&t, p).is_some(), "page shows at {p:?}");
+                }
+            }
+        }
+        // The head is one ring: its eyes and cheeks are drawn over it.
+        let is_yellow = |c: &&Traced| {
+            let [r, g, b] = c.color.to_rgb8();
+            r > 200 && g > 180 && b < 120
+        };
+        let yellow_rings: Vec<usize> = t
+            .iter()
+            .filter(is_yellow)
+            .map(|c| {
+                c.path
+                    .elements()
+                    .iter()
+                    .filter(|e| matches!(e, tracedraw_core::geometry::PathEl::MoveTo(_)))
+                    .count()
+            })
+            .collect();
+        assert_eq!(yellow_rings.len(), 1, "one yellow curve");
+        let head_eye = Point::new(64.0, 58.0);
+        let top = top_colour_at(&t, head_eye).unwrap_or([255; 3]);
+        assert!(top[0] < 80, "the eye shows over the head: {top:?}");
+        let yellow_curve = t.iter().find(is_yellow);
+        assert!(
+            yellow_curve.is_some_and(|c| c.path.winding(head_eye) % 2 != 0),
+            "the head reaches under its eyes"
+        );
+        // Each curve one per patch too, and without smoothing.
+        s.merge_adjacent = false;
+        let (together, apart) = border_distances(&trace(&img, &s));
+        assert!(
+            apart * 20 < together,
+            "patches: {apart} beside, {together} on one"
+        );
+        s.smoothing = 0.0;
+        let (together, apart) = border_distances(&trace(&img, &s));
+        assert!(
+            apart * 20 < together,
+            "unsmoothed: {apart} beside, {together} on one"
+        );
+    }
+
+    /// The borders of a labelling: each edge between two regions on one
+    /// border, borders ending at the corners where three regions meet,
+    /// an island a loop; a ring put together from them runs forwards on
+    /// one side and backwards on the other.
+    #[test]
+    fn borders_meet_at_junctions_and_islands_are_loops() {
+        // 0 0 1 1
+        // 0 2 2 1
+        // 0 0 1 1, and a picture edge all round.
+        let labels = vec![0, 0, 1, 1, 0, 2, 2, 1, 0, 0, 1, 1];
+        let Some(b) = borders(&labels, 4, 3, None) else {
+            panic!("not cancelled");
+        };
+        let edges: usize = b.iter().map(|b| b.steps.len()).sum();
+        // Inner edges between different labels, plus the outline.
+        let inner = 2 + 2 + 1 + 1 + 1 + 1;
+        assert_eq!(edges, inner + 2 * (4 + 3));
+        assert!(b.iter().all(|b| !b.closed));
+        // A pixel of 1 inside 0: one loop.
+        let mut island = vec![0usize; 25];
+        island[12] = 1;
+        let Some(b) = borders(&island, 5, 5, None) else {
+            panic!("not cancelled");
+        };
+        assert_eq!(
+            b.iter().filter(|b| b.closed).count(),
+            2,
+            "the island and the outline"
+        );
+        let raised = Cancel::new(true);
+        assert!(borders(&island, 5, 5, Some(&raised)).is_none());
+        // Reversed curves end where they start and keep their pieces.
+        let mut c = BezPath::new();
+        c.move_to(Point::new(0.0, 0.0));
+        c.curve_to(
+            Point::new(1.0, 0.0),
+            Point::new(2.0, 1.0),
+            Point::new(2.0, 2.0),
+        );
+        c.line_to(Point::new(0.0, 2.0));
+        let mut r = BezPath::new();
+        r.move_to(Point::new(0.0, 2.0));
+        append_curve(&mut r, &c, false, false);
+        use tracedraw_core::geometry::PathEl;
+        assert_eq!(
+            r.elements()[1..],
+            [
+                PathEl::LineTo(Point::new(2.0, 2.0)),
+                PathEl::CurveTo(
+                    Point::new(2.0, 1.0),
+                    Point::new(1.0, 0.0),
+                    Point::new(0.0, 0.0)
+                ),
+            ]
+        );
+    }
+
+    /// Colours inside another's holes stack above it, the darkest first
+    /// otherwise, and colours in each other's holes darkest first.
+    #[test]
+    fn colours_inside_holes_stack_above_the_one_around() {
+        // 0 holds 2 in a hole, 1 is beside both.
+        let mut inside = vec![vec![false; 3]; 3];
+        inside[0][2] = true;
+        assert_eq!(stacking_order(&inside, &[200, 10, 50]), vec![1, 0, 2]);
+        // 0 and 2 in each other's holes: the darker first.
+        inside[2][0] = true;
+        assert_eq!(stacking_order(&inside, &[200, 10, 50]), vec![1, 2, 0]);
+        assert_eq!(stacking_order(&[], &[]), Vec::<usize>::new());
     }
 }

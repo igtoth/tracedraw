@@ -80,11 +80,13 @@ The [[dialog.trace_tab_settings]] tab holds:
   the eyedropper beside it.
 - [[dialog.trace_objects]]: [[dialog.trace_merge_adjacent]] (on at first)
   makes one curve of every area of a color; off, each separate patch is a
-  curve of its own. [[dialog.trace_remove_overlap]] keeps every shape to
-  its own pixels; off, shapes reach a little under the ones above them, so
-  no gaps show between neighbors. [[dialog.trace_group_by_color]] puts the
-  curves of each color in a group of their own; it is available when the
-  areas of a color are not merged already.
+  curve of its own. [[dialog.trace_remove_overlap]] keeps every shape to its
+  own pixels, holes and all; off, a shape is drawn whole under the shapes
+  inside it (a head under its eyes). Either way, neighbors share one curve
+  along their border, so no gaps show and the wireframe shows each border
+  once. [[dialog.trace_group_by_color]] puts the curves of each color in a
+  group of their own; it is available when the areas of a color are not
+  merged already.
 - [[dialog.delete_original]]: the bitmap goes when the trace is placed.
 
 Settings that do not apply to the current trace type are grayed out: a

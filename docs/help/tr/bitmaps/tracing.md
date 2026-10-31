@@ -82,11 +82,14 @@ görünebilir, ancak [[dialog.ok]] tüm resmi izler. Masaüstü uygulaması
   değiştirebilir ya da yanındaki damlalıkla önizlemeden alabilirsiniz.
 - [[dialog.trace_objects]]: [[dialog.trace_merge_adjacent]] (başlangıçta
   açık) bir rengin her alanından tek bir eğri yapar; kapalıyken her ayrı
-  parça kendi eğrisi olur. [[dialog.trace_remove_overlap]] her şekli kendi
-  piksellerinde tutar; kapalıyken şekiller üstlerindekilerin biraz altına
-  uzanır, böylece komşular arasında boşluk görünmez.
-  [[dialog.trace_group_by_color]] her rengin eğrilerini kendi grubuna koyar;
-  bir rengin alanları zaten birleştirilmemişse kullanılabilir.
+  parça kendi eğrisi olur. [[dialog.trace_remove_overlap]] her şekli
+  delikleriyle birlikte kendi piksellerinde tutar; kapalıyken şekil,
+  içindeki şekillerin altına bütün olarak çizilir (gözlerinin altında bir
+  baş). Her iki durumda da komşular sınırları boyunca tek bir eğriyi
+  paylaşır, böylece boşluk görünmez ve tel kafes her sınırı bir kez
+  gösterir. [[dialog.trace_group_by_color]] her rengin eğrilerini kendi
+  grubuna koyar; bir rengin alanları zaten birleştirilmemişse
+  kullanılabilir.
 - [[dialog.delete_original]]: iz yerleştirildiğinde bitmap silinir.
 
 Geçerli iz türüne uymayan ayarlar gri görünür: orta çizgi izi yalnızca

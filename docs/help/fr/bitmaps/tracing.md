@@ -88,9 +88,11 @@ L'onglet [[dialog.trace_tab_settings]] contient :
 - [[dialog.trace_objects]] : [[dialog.trace_merge_adjacent]] (activé au
   départ) fait une seule courbe de chaque zone d'une couleur ; désactivé,
   chaque tache séparée devient une courbe à part.
-  [[dialog.trace_remove_overlap]] garde chaque forme sur ses propres
-  pixels ; désactivé, les formes passent un peu sous celles au-dessus, pour
-  qu'aucun jour n'apparaisse entre voisines. [[dialog.trace_group_by_color]]
+  [[dialog.trace_remove_overlap]] garde chaque forme sur ses propres pixels,
+  trous compris ; désactivé, une forme est dessinée entière sous les formes
+  qu'elle contient (une tête sous ses yeux). Dans les deux cas, des voisines
+  partagent une courbe le long de leur bord : aucun jour n'apparaît et le
+  fil de fer montre chaque bord une fois. [[dialog.trace_group_by_color]]
   place les courbes de chaque couleur dans un groupe à part ; il est
   disponible quand les zones d'une couleur ne sont pas déjà fusionnées.
 - [[dialog.delete_original]] : le bitmap disparaît quand le résultat est
